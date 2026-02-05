@@ -3,9 +3,11 @@
 /**
  * OpenRCT2 Era-Based Progression System
  * 
- * Version: 3.5.0
- * Author: Rhodi
+ * Version: 0.2.0
+ * Author: Floatey
  * License: MIT
+ * 
+ * Modified to enable all RCT2 rides on initialization
  */
 
 // ========== ERA DEFINITIONS ==========
@@ -248,6 +250,72 @@ function saveStorage(data) {
     storage.set(STORAGE_KEY, JSON.stringify(data));
 }
 
+// ========== RCT2 RIDE ENABLER ==========
+
+/**
+ * Enable all RCT2 rides in the scenario
+ * This loads RCT2 ride objects into the scenario and adds them to research
+ * Excludes: rct1., rct2tt., rct2ww., rct1ll., rct1aa. objects
+ * IMPORTANT: Does NOT load scenery_group objects - those must be manually selected if desired
+ */
+function enableAllRCT2Rides() {
+    console.log("Loading all RCT2 rides into scenario...");
+    
+    var loadedCount = 0;
+    var failedCount = 0;
+    var skippedCount = 0;
+    var allInstalled = objectManager.installedObjects;
+    
+    for (var i = 0; i < allInstalled.length; i++) {
+        var installedObj = allInstalled[i];
+        var objectId = installedObj.identifier;
+        
+        // Only process RCT2 ride objects (not scenery groups)
+        if (installedObj.type === "ride" && objectId.indexOf("rct2.ride.") === 0) {
+            // Check if it's already loaded
+            var alreadyLoaded = false;
+            var loadedObjects = objectManager.getAllObjects("ride");
+            for (var j = 0; j < loadedObjects.length; j++) {
+                if (loadedObjects[j].identifier === objectId) {
+                    alreadyLoaded = true;
+                    skippedCount++;
+                    break;
+                }
+            }
+            
+            if (!alreadyLoaded) {
+                try {
+                    // Load the object into the scenario
+                    var loadedObj = objectManager.load(objectId);
+                    
+                    if (loadedObj !== null) {
+                        // Add to uninvented research items
+                        park.research.uninventedItems.push({
+                            type: "ride",
+                            object: loadedObj.index
+                        });
+                        loadedCount++;
+                        console.log("Loaded and added to research: " + objectId);
+                    } else {
+                        failedCount++;
+                        console.log("Failed to load: " + objectId);
+                    }
+                } catch (e) {
+                    failedCount++;
+                    console.log("Error loading " + objectId + ": " + e);
+                }
+            }
+        }
+    }
+    
+    console.log("Summary:");
+    console.log("  - Loaded: " + loadedCount + " RCT2 rides");
+    console.log("  - Already in scenario: " + skippedCount);
+    console.log("  - Failed: " + failedCount);
+    
+    return loadedCount;
+}
+
 // ========== CORE FUNCTIONS ==========
 
 /**
@@ -265,6 +333,9 @@ function initializeEraSystem() {
         data.unlockedEras = [0];
     }
     
+    // Load all RCT2 rides into the scenario
+    var loadedCount = enableAllRCT2Rides();
+    
     // Mark as invented everything from unlocked eras
     markUnlockedErasAsResearched(data);
     
@@ -273,6 +344,14 @@ function initializeEraSystem() {
     
     data.initialized = true;
     saveStorage(data);
+    
+    console.log("Era Progression System initialized!");
+    console.log("Loaded " + loadedCount + " RCT2 rides into the scenario.");
+    
+    park.postMessage({
+        type: 'award',
+        text: "Era System initialized!\nLoaded " + loadedCount + " RCT2 rides."
+    });
 }
 
 /**
@@ -1133,7 +1212,7 @@ function disableResearchFunding() {
 }
 
 function main() {
-    console.log("Era-Based Progression System v3.5.0 loaded!");
+    console.log("Era-Based Progression System v3.5.1 loaded!");
     
     if (typeof park === 'undefined') {
         return;
@@ -1154,8 +1233,8 @@ function main() {
 
 registerPlugin({
     name: "Era-Based Progression System",
-    version: "3.5.0",
-    authors: ["Rhodi"],
+    version: "0.2.0",
+    authors: ["Floatey"],
     type: "remote",
     licence: "MIT",
     targetApiVersion: 77,
