@@ -24,7 +24,7 @@ var ERAS = [
             // Rides
             "rct2.ride.hmaze", "rct2.ride.mgr1", "rct2tt.ride.mgr2", "rct1.ride.horses",
             "rct2.ride.hskelt", "rct2.ride.cboat", "rct2ww.ride.outriggr", "rct2ww.ride.dhowwatr",
-            "rct2.ride.rboat", "rct1.ride.dinghies", "rct2.ride.swans", "rct2ww.ride.mandarin",
+            "rct2.ride.rboat", "rct2.ride.swans", "rct2ww.ride.mandarin",
             "rct2.ride.trike", "rct2.ride.lift1", "rct2ww.ride.minelift",
             "rct1.ride.steam_trains", "rct1ll.ride.steam_trains_american", "rct1aa.ride.steam_trains_covered",
             "rct2.ride.aml1", "rct2ww.ride.steamtrn", "rct2.ride.nrl", "rct2.ride.nrl2",
@@ -112,14 +112,14 @@ var ERAS = [
         color: "{ORANGE}",
         items: [
             // Rides
-            "rct2.ride.ding1", "rct1.ride.corkscrew_trains", "rct2.ride.arrt1",
+            "rct2.ride.ding1", "rct1.ride.corkscrew_trains", "rct2.ride.arrt1", "rct1.ride.dinghies",
             "rct2ww.ride.caddilac", "rct2ww.ride.seals", "rct1.ride.wooden_rc_trains",
             "rct2.ride.ptct1", "rct2ww.ride.stgccstr", "rct2ww.ride.minecart",
             "rct1.ride.mine_trains", "rct1.ride.mine_cars", "rct2.ride.amt1",
             "rct2.ride.enterp", "rct2.ride.scht1", "rct1.ride.steel_rc_trains",
             "rct1.ride.steel_rc_trains_reversed", "rct2tt.ride.polchase",
             "rct2tt.ride.telepter", "rct2.ride.obs1", "rct2.ride.obs2", "rct2tt.ride.bmvoctps",
-            "rct2.ride.ssc1", "rct2.ride.wcatc", "rct2.ride.jstar1", "rct1.ride.rocket_cars",
+            "rct2.ride.wcatc", "rct2.ride.jstar1", "rct1.ride.rocket_cars",
             "rct2.ride.rckc", "rct2.ride.spdrcr", "rct2ww.ride.rssncrrd",
             "rct1.ride.pickup_trucks", "rct2.ride.4x4", "rct2.ride.truck1",
             "rct1.ride.motorbikes", "rct1ll.ride.jet_skis", "rct2.ride.jski",
@@ -196,7 +196,7 @@ var ERAS = [
             "rct2tt.ride.funhouse", "rct2tt.ride.halofmrs", "rct2.ride.c3d",
 
             // Flat Rides
-            "rct2.ride.topsp1",
+            "rct2.ride.topsp1", "rct2.ride.ssc1",
 
             // Suspended Looping Coasters
             "rct2.ride.slcfo", "rct2.ride.slct",
