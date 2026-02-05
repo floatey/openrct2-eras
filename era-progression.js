@@ -3,7 +3,7 @@
 /**
  * OpenRCT2 Era-Based Progression System
  * 
- * Version: 0.3.3
+ * Version: 0.3.4
  * Author: Floatey
  * License: MIT
  * 
@@ -18,7 +18,7 @@ var ERAS = [
     {
         name: "Antique Amusement (1890s-1910s)",
         description: "The birth of the amusement park",
-        ridesRequired: 8,
+        ridesRequired: 5,
         color: "{BROWN}",
         items: [
             // Rides
@@ -49,7 +49,7 @@ var ERAS = [
     {
         name: "Classic Coasters (1920s-1930s)",
         description: "The golden age begins",
-        ridesRequired: 10,
+        ridesRequired: 5,
         color: "{YELLOW}",
         items: [
             // Rides
@@ -74,7 +74,7 @@ var ERAS = [
     {
         name: "Transition Era (1950s)",
         description: "Innovation and expansion",
-        ridesRequired: 12,
+        ridesRequired: 6,
         color: "{LIGHT_BLUE}",
         items: [
             // Rides
@@ -108,7 +108,7 @@ var ERAS = [
     {
         name: "Steel Renaissance (1960s-1970s)",
         description: "Steel coasters and intense thrills",
-        ridesRequired: 14,
+        ridesRequired: 6,
         color: "{ORANGE}",
         items: [
             // Rides
@@ -136,7 +136,7 @@ var ERAS = [
     {
         name: "Extreme Innovation (1980s)",
         description: "Water rides and suspended thrills",
-        ridesRequired: 14,
+        ridesRequired: 8,
         color: "{CYAN}",
         items: [
             // Water Rides
@@ -186,7 +186,7 @@ var ERAS = [
     {
         name: "Modern Thrill Revolution (1990s)",
         description: "Inversions and innovation peaks",
-        ridesRequired: 16,
+        ridesRequired: 8,
         color: "{GREEN}",
         items: [
             // Hypercoasters
@@ -252,7 +252,7 @@ var ERAS = [
     {
         name: "Millennium Age (2000s+)",
         description: "The ultimate experiences",
-        ridesRequired: 18,
+        ridesRequired: 0,
         color: "{BRIGHT_PINK}",
         items: [
             // Modern Twister Coasters
@@ -1478,7 +1478,7 @@ function main() {
 
 registerPlugin({
     name: "Era-Based Progression System",
-    version: "0.3.3",
+    version: "0.3.4",
     authors: ["Floatey"],
     type: "remote",
     licence: "MIT",
