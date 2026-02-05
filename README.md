@@ -13,12 +13,12 @@ OpenRCT2 plugin — progress era by era, unlock more rides by building rides.
 
 ## Eras
 
-- **Antique Amusement (1890s-1910s)** — 5 rides
-- **Classic Coasters (1920s-1930s)** — 5 rides
-- **Transition Era (1950s)** — 6 rides
-- **Steel Renaissance (1960s-1970s)** — 6 rides
-- **Extreme Innovation (1980s)** — 8 rides
-- **Modern Thrill Revolution (1990s)** - 8 rides
+- **Antique Amusement (1890s-1910s)** — 5 unqiue rides to progress
+- **Classic Coasters (1920s-1930s)** — 5 rides unqiue rides to progress
+- **Transition Era (1950s)** — 6 rides unqiue rides to progress
+- **Steel Renaissance (1960s-1970s)** — 6 rides unqiue rides to progress
+- **Extreme Innovation (1980s)** — 8 rides unqiue rides to progress
+- **Modern Thrill Revolution (1990s)** - 8 rides unqiue rides to progress
 - **Millennium Age (2000s+)**
 
 Research is **disabled**. Only era-appropriate content is available. 
