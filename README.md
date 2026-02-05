@@ -3,7 +3,7 @@
 
 OpenRCT2 plugin — progress era by era, unlock more rides by building rides.
 
-**v0.2.0** • API 77+ • MIT
+**v0.3.3** • API 77+ • MIT
 
 ## Quick Start
 
@@ -13,14 +13,17 @@ OpenRCT2 plugin — progress era by era, unlock more rides by building rides.
 
 ## Eras
 
-- **Pioneer (1890s–1920s)** — 8 rides
-- **Roaring Twenties (1920s–1930s)** — 10 rides
-- **Post-War Boom (1950s)** — 12 rides
-- **Thrill Revolution (1970s)** — 14 rides
-- **Modern Era (1980s–1990s)** — 16 rides
-- **Contemporary (2000s+)** — 18 rides
+- **Antique Amusement (1890s-1910s)** — 8 rides
+- **Classic Coasters (1920s-1930s)** — 10 rides
+- **Transition Era (1950s)** — 12 rides
+- **Steel Renaissance (1960s-1970s)** — 14 rides
+- **Extreme Innovation (1980s)** — 14 rides
+- **Modern Thrill Revolution (1990s)** - 16 rides
+- **Millennium Age (2000s+)** — 18 rides
 
 Research is **disabled**. Only era-appropriate content is available. 
+
+Plugin can be disabled via debug menu.
 
 All rides required for this plugin are enabled in the scenario upon initialization.
 *(excluding rct2ww, rct2tt, rct1ll, rct1)
