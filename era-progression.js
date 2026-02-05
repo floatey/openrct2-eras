@@ -3,13 +3,9 @@
 /**
  * OpenRCT2 Era-Based Progression System
  * 
- * Version: 0.3.4
+ * Version: 0.4.2
  * Author: Floatey
  * License: MIT
- * 
- * Modified to split 1980s and 1990s into separate eras
- * Added backup/restore of original research state for safe deactivation
- * Fixed: Now stores object identifiers in backup (not indices) to prevent invalid references
  */
 
 // ========== ERA DEFINITIONS ==========
@@ -18,8 +14,14 @@ var ERAS = [
     {
         name: "Antique Amusement (1890s-1910s)",
         description: "The birth of the amusement park",
-        ridesRequired: 8,
-        color: "{BROWN}",
+        requirements: {
+            ridesRequired: 8,
+            guestsRequired: 500,
+            parkRatingRequired: 700,
+            yearsRequired: 2,
+            cashRequired: 5000
+        },
+        color: "{WHITE}",
         items: [
             // Rides
             "rct2.ride.hmaze", "rct2.ride.mgr1", "rct2tt.ride.mgr2", "rct1.ride.horses",
@@ -49,8 +51,14 @@ var ERAS = [
     {
         name: "Classic Coasters (1920s-1930s)",
         description: "The golden age begins",
-        ridesRequired: 5,
-        color: "{YELLOW}",
+        requirements: {
+            ridesRequired: 5,
+            guestsRequired: 800,
+            parkRatingRequired: 750,
+            yearsRequired: 2,
+            cashRequired: 10000
+        },
+        color: "{WHITE}",
         items: [
             // Rides
             "rct2.ride.tram1", "rct2ww.ride.sanftram", "rct1aa.ride.bicycles", "rct2.ride.monbk",
@@ -74,8 +82,14 @@ var ERAS = [
     {
         name: "Transition Era (1950s)",
         description: "Innovation and expansion",
-        ridesRequired: 6,
-        color: "{LIGHT_BLUE}",
+        requirements: {
+            ridesRequired: 5,
+            guestsRequired: 1200,
+            parkRatingRequired: 800,
+            yearsRequired: 2,
+            cashRequired: 20000
+        },
+        color: "{WHITE}",
         items: [
             // Rides
             "rct1aa.ride.steel_wild_mouse_cars", "rct2.ride.smc1", "rct2.ride.smc2",
@@ -108,8 +122,14 @@ var ERAS = [
     {
         name: "Steel Renaissance (1960s-1970s)",
         description: "Steel coasters and intense thrills",
-        ridesRequired: 6,
-        color: "{ORANGE}",
+        requirements: {
+            ridesRequired: 6,
+            guestsRequired: 1500,
+            parkRatingRequired: 800,
+            yearsRequired: 3,
+            cashRequired: 35000
+        },
+        color: "{WHITE}",
         items: [
             // Rides
             "rct2.ride.ding1", "rct1.ride.corkscrew_trains", "rct2.ride.arrt1", "rct1.ride.dinghies",
@@ -136,8 +156,14 @@ var ERAS = [
     {
         name: "Extreme Innovation (1980s)",
         description: "Water rides and suspended thrills",
-        ridesRequired: 6,
-        color: "{CYAN}",
+        requirements: {
+            ridesRequired: 6,
+            guestsRequired: 2000,
+            parkRatingRequired: 800,
+            yearsRequired: 3,
+            cashRequired: 50000
+        },
+        color: "{WHITE}",
         items: [
             // Water Rides
             "rct1ll.ride.coaster_boats", "rct2.ride.cstboat", "rct2.ride.mcarpet1",
@@ -186,8 +212,14 @@ var ERAS = [
     {
         name: "Modern Thrill Revolution (1990s)",
         description: "Inversions and innovation peaks",
-        ridesRequired: 8,
-        color: "{GREEN}",
+        requirements: {
+            ridesRequired: 6,
+            guestsRequired: 2500,
+            parkRatingRequired: 800,
+            yearsRequired: 3,
+            cashRequired: 75000
+        },
+        color: "{WHITE}",
         items: [
             // Hypercoasters
             "rct1ll.ride.hypercoaster_trains", "rct2.ride.arrt2",
@@ -252,8 +284,14 @@ var ERAS = [
     {
         name: "Millennium Age (2000s+)",
         description: "The ultimate experiences",
-        ridesRequired: 0,
-        color: "{BRIGHT_PINK}",
+        requirements: {
+            ridesRequired: 0,
+            guestsRequired: 0,
+            parkRatingRequired: 0,
+            yearsRequired: 0,
+            cashRequired: 0
+        },
+        color: "{WHITE}",
         items: [
             // Modern Twister Coasters
             "rct1aa.ride.twister_trains", "rct2.ride.bmsd",
@@ -296,7 +334,7 @@ var ERAS = [
 
 // ========== STORAGE & STATE ==========
 
-var STORAGE_KEY = "eraProgressionData_v6";
+var STORAGE_KEY = "eraProgressionData_v7";
 var debugWindow = null;
 
 function getStorage() {
@@ -308,7 +346,9 @@ function getStorage() {
             unlockedEras: [],
             initialized: false,
             disabled: false,
-            backupResearch: null
+            backupResearch: null,
+            eraStartDate: null,
+            readyToProgress: false
         };
         storage.set(STORAGE_KEY, JSON.stringify(initialData));
     }
@@ -318,6 +358,58 @@ function getStorage() {
 function saveStorage(data) {
     var storage = context.getParkStorage();
     storage.set(STORAGE_KEY, JSON.stringify(data));
+}
+
+// ========== HELPER FUNCTIONS ==========
+
+/**
+ * Get current park guests count
+ */
+function getCurrentGuests() {
+    return park.guests;
+}
+
+/**
+ * Get current park rating
+ */
+function getCurrentParkRating() {
+    return park.rating;
+}
+
+/**
+ * Get current park cash (in dollars, converted from game currency)
+ */
+function getCurrentCash() {
+    return park.cash / 10.0;  // Game uses 10x multiplier
+}
+
+/**
+ * Get years passed since era started
+ */
+function getYearsInCurrentEra(data) {
+    if (!data.eraStartDate) {
+        return 0;
+    }
+
+    var currentDate = date;
+    var startDate = data.eraStartDate;
+
+    // Calculate year difference
+    var yearsPassed = currentDate.year - startDate.year;
+
+    // Adjust for partial years based on month
+    if (currentDate.month < startDate.month) {
+        yearsPassed--;
+    }
+
+    return Math.max(0, yearsPassed);
+}
+
+/**
+ * Format cash for display
+ */
+function formatCash(amount) {
+    return "$" + amount.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 // ========== RCT2 RIDE ENABLER ==========
@@ -393,8 +485,13 @@ function initializeEraSystem() {
 
     data.unlockedEras = [0];
     data.disabled = false;
+    data.eraStartDate = {
+        year: date.year,
+        month: date.month,
+        day: date.day
+    };
 
-    // CRITICAL: Backup using object IDENTIFIERS, not indices
+    // Backup using object IDENTIFIERS, not indices
     data.backupResearch = {
         inventedItems: [],
         uninventedItems: [],
@@ -411,7 +508,7 @@ function initializeEraSystem() {
         if (obj) {
             data.backupResearch.inventedItems.push({
                 type: item.type,
-                identifier: obj.identifier,  // Store identifier instead of index
+                identifier: obj.identifier,
                 category: item.category || undefined,
                 flags: item.flags || undefined
             });
@@ -427,7 +524,7 @@ function initializeEraSystem() {
         if (obj) {
             data.backupResearch.uninventedItems.push({
                 type: item.type,
-                identifier: obj.identifier,  // Store identifier instead of index
+                identifier: obj.identifier,
                 category: item.category || undefined,
                 flags: item.flags || undefined
             });
@@ -587,15 +684,52 @@ function countEraRidesBuilt(eraIndex) {
     return Object.keys(uniqueRides).length;
 }
 
+/**
+ * Check all requirements for current era and return status
+ */
+function checkAllRequirements(eraIndex, data) {
+    if (eraIndex < 0 || eraIndex >= ERAS.length) {
+        return null;
+    }
+
+    var era = ERAS[eraIndex];
+    var req = era.requirements;
+
+    var ridesBuilt = countEraRidesBuilt(eraIndex);
+    var currentGuests = getCurrentGuests();
+    var currentRating = getCurrentParkRating();
+    var currentCash = getCurrentCash();
+    var yearsInEra = getYearsInCurrentEra(data);
+
+    return {
+        ridesBuilt: ridesBuilt,
+        ridesMet: ridesBuilt >= req.ridesRequired,
+        guestsMet: currentGuests >= req.guestsRequired,
+        ratingMet: currentRating >= req.parkRatingRequired,
+        cashMet: currentCash >= req.cashRequired,
+        yearsMet: yearsInEra >= req.yearsRequired,
+        allMet: ridesBuilt >= req.ridesRequired &&
+            currentGuests >= req.guestsRequired &&
+            currentRating >= req.parkRatingRequired &&
+            currentCash >= req.cashRequired &&
+            yearsInEra >= req.yearsRequired,
+        currentGuests: currentGuests,
+        currentRating: currentRating,
+        currentCash: currentCash,
+        yearsInEra: yearsInEra
+    };
+}
+
 function getEraStats(eraIndex) {
     if (eraIndex < 0 || eraIndex >= ERAS.length) return null;
 
     var era = ERAS[eraIndex];
-    var ridesBuilt = countEraRidesBuilt(eraIndex);
     var data = getStorage();
     var isUnlocked = data.unlockedEras && data.unlockedEras.indexOf(eraIndex) !== -1;
     var isCurrent = data.currentEra === eraIndex;
-    var isCompleted = ridesBuilt >= era.ridesRequired;
+
+    var requirements = checkAllRequirements(eraIndex, data);
+    var isCompleted = requirements ? requirements.allMet : false;
 
     var rideCount = 0;
     var sceneryCount = 0;
@@ -606,13 +740,33 @@ function getEraStats(eraIndex) {
         if (id.indexOf('.scenery_group.') !== -1) {
             sceneryCount++;
         } else if (id.indexOf('.ride.') !== -1) {
-            if (id.indexOf('tlt') !== -1 || id.indexOf('hotds') !== -1 ||
-                id.indexOf('drnks') !== -1 || id.indexOf('toilets') !== -1 ||
-                id.indexOf('infok') !== -1 || id.indexOf('souvs') !== -1 ||
-                id.indexOf('balln') !== -1 || id.indexOf('burgb') !== -1 ||
-                id.indexOf('popcs') !== -1 || id.indexOf('lemst') !== -1 ||
-                id.indexOf('coffs') !== -1 || id.indexOf('hatst') !== -1 ||
-                id.indexOf('cndyf') !== -1 || id.indexOf('sand') !== -1) {
+            // Comprehensive stall detection - check for all stall identifiers
+            if (id.indexOf('tlt1') !== -1 || id.indexOf('tlt2') !== -1 ||
+                id.indexOf('hotds') !== -1 || id.indexOf('drnks') !== -1 ||
+                id.indexOf('toilets') !== -1 || id.indexOf('infok') !== -1 ||
+                id.indexOf('souvs') !== -1 || id.indexOf('balln') !== -1 ||
+                id.indexOf('burgb') !== -1 || id.indexOf('popcs') !== -1 ||
+                id.indexOf('lemst') !== -1 || id.indexOf('coffs') !== -1 ||
+                id.indexOf('1920sand') !== -1 || id.indexOf('hatst') !== -1 ||
+                id.indexOf('cndyf') !== -1 || id.indexOf('fruity_ices_stall') !== -1 ||
+                id.indexOf('dough') !== -1 || id.indexOf('cookst') !== -1 ||
+                id.indexOf('icecr1') !== -1 || id.indexOf('icecr2') !== -1 ||
+                id.indexOf('toffs') !== -1 || id.indexOf('pizzs') !== -1 ||
+                id.indexOf('chpsh') !== -1 || id.indexOf('chpsh2') !== -1 ||
+                id.indexOf('funcake') !== -1 || id.indexOf('pretst') !== -1 ||
+                id.indexOf('hchoc') !== -1 || id.indexOf('rsaus') !== -1 ||
+                id.indexOf('chknug') !== -1 || id.indexOf('chcks') !== -1 ||
+                id.indexOf('substl') !== -1 || id.indexOf('sqdst') !== -1 ||
+                id.indexOf('bnoodles') !== -1 || id.indexOf('frnood') !== -1 ||
+                id.indexOf('mbsoup') !== -1 || id.indexOf('wonton') !== -1 ||
+                id.indexOf('icetst') !== -1 || id.indexOf('soybean') !== -1 ||
+                id.indexOf('cindr') !== -1 || id.indexOf('sungst') !== -1 ||
+                id.indexOf('tshrt') !== -1 || id.indexOf('faid1') !== -1 ||
+                id.indexOf('atm1') !== -1 || id.indexOf('softoyst') !== -1 ||
+                id.indexOf('1960tsrt') !== -1 || id.indexOf('medisoup') !== -1 ||
+                id.indexOf('mythosea') !== -1 || id.indexOf('mktstal1') !== -1 ||
+                id.indexOf('mktstal2') !== -1 || id.indexOf('moonjuce') !== -1 ||
+                id.indexOf('starfrdr') !== -1) {
                 stallCount++;
             } else {
                 rideCount++;
@@ -622,7 +776,7 @@ function getEraStats(eraIndex) {
 
     return {
         era: era,
-        ridesBuilt: ridesBuilt,
+        requirements: requirements,
         isUnlocked: isUnlocked,
         isCurrent: isCurrent,
         isCompleted: isCompleted,
@@ -639,11 +793,55 @@ function checkEraProgression() {
     if (!data.initialized || data.disabled) return;
     if (data.currentEra >= ERAS.length - 1) return;
 
-    var currentEra = ERAS[data.currentEra];
-    var ridesBuilt = countEraRidesBuilt(data.currentEra);
+    var requirements = checkAllRequirements(data.currentEra, data);
 
-    if (ridesBuilt < currentEra.ridesRequired) return;
+    if (!requirements || !requirements.allMet) {
+        // Requirements not met - clear the flag
+        if (data.readyToProgress) {
+            data.readyToProgress = false;
+            saveStorage(data);
+        }
+        return;
+    }
 
+    // Requirements met! Set flag but don't auto-progress
+    if (!data.readyToProgress) {
+        data.readyToProgress = true;
+        saveStorage(data);
+
+        // Pause the game and show prominent notification
+        ui.paused = true;
+        park.postMessage({
+            type: 'award',
+            text: "New Era Available!\n" + ERAS[data.currentEra + 1].name + "\nOpen Era System to progress."
+        });
+
+        console.log("Era progression ready: " + ERAS[data.currentEra + 1].name);
+    }
+}
+
+/**
+ * Actually progress to the next era (called by button press)
+ * @param skipCashDeduction - If true, don't deduct cash (for debug mode)
+ */
+function progressToNextEra(skipCashDeduction) {
+    var data = getStorage();
+
+    if (!data.initialized || data.disabled) return false;
+    if (data.currentEra >= ERAS.length - 1) return false;
+
+    var requirements = checkAllRequirements(data.currentEra, data);
+    if (!requirements || !requirements.allMet) return false;
+
+    // Deduct cash (unless we're in debug mode)
+    if (!skipCashDeduction) {
+        var currentEra = ERAS[data.currentEra];
+        if (currentEra.requirements.cashRequired > 0) {
+            park.cash -= currentEra.requirements.cashRequired * 10;  // Game uses 10x multiplier
+        }
+    }
+
+    // All requirements met! Advance to next era
     data.currentEra++;
 
     if (!data.unlockedEras) {
@@ -653,6 +851,16 @@ function checkEraProgression() {
         data.unlockedEras.push(data.currentEra);
     }
 
+    // Set new era start date
+    data.eraStartDate = {
+        year: date.year,
+        month: date.month,
+        day: date.day
+    };
+
+    // Clear the ready flag
+    data.readyToProgress = false;
+
     saveStorage(data);
 
     markEraAsResearched(data.currentEra);
@@ -660,16 +868,19 @@ function checkEraProgression() {
     var nextEra = ERAS[data.currentEra];
     park.postMessage({
         type: 'award',
-        text: "New Era Unlocked: " + nextEra.name + "!"
+        text: "Era Unlocked!\n" + nextEra.name
     });
+
+    console.log("Advanced to era: " + nextEra.name);
 
     if (debugWindow) {
         refreshDebugWindow();
     }
+
+    return true;
 }
 
-// ========== GUI ========== 
-// [GUI code continues - same as before but with the updated reset button]
+// ========== GUI ==========
 
 function openControlWindow() {
     var existingWindow = ui.getWindow("era-progression-control");
@@ -686,9 +897,9 @@ function openControlWindow() {
             type: "label",
             x: 10,
             y: y,
-            width: 330,
+            width: 380,
             height: 50,
-            text: "Build rides from each era to unlock the next!\n\nClick Initialize to start."
+            text: "Build rides and develop your park to unlock new eras!\n\nClick Initialize to start."
         });
         y += 60;
 
@@ -696,7 +907,7 @@ function openControlWindow() {
             type: "label",
             x: 10,
             y: y,
-            width: 330,
+            width: 380,
             height: 30,
             text: "{YELLOW}Note: Research funding will be disabled\nto maintain era progression."
         });
@@ -704,7 +915,7 @@ function openControlWindow() {
 
         widgets.push({
             type: "button",
-            x: 75,
+            x: 90,
             y: y,
             width: 200,
             height: 30,
@@ -718,14 +929,14 @@ function openControlWindow() {
         y += 40;
     } else {
         var currentEra = ERAS[data.currentEra];
-        var ridesBuilt = countEraRidesBuilt(data.currentEra);
-        var nextEra = data.currentEra < ERAS.length - 1 ? ERAS[data.currentEra + 1] : null;
+        var progressRequirements = checkAllRequirements(data.currentEra, data);
+        var isLastEra = data.currentEra >= ERAS.length - 1;
 
         widgets.push({
             type: "label",
             x: 10,
             y: y,
-            width: 330,
+            width: 380,
             height: 14,
             text: "{WHITE}Current Era:"
         });
@@ -735,7 +946,7 @@ function openControlWindow() {
             type: "label",
             x: 10,
             y: y,
-            width: 330,
+            width: 380,
             height: 14,
             text: currentEra.color + currentEra.name
         });
@@ -745,64 +956,167 @@ function openControlWindow() {
             type: "label",
             x: 10,
             y: y,
-            width: 330,
+            width: 380,
             height: 14,
             text: "{SILVER}" + currentEra.description
         });
-        y += 20;
+        y += 22;
 
-        widgets.push({
-            type: "label",
-            x: 10,
-            y: y,
-            width: 330,
-            height: 14,
-            text: "{WHITE}Progress to next era:"
-        });
-        y += 16;
+        // Requirements section - show current era's requirements for progression
+        if (!isLastEra && progressRequirements) {
+            var req = currentEra.requirements;
 
-        widgets.push({
-            type: "label",
-            x: 10,
-            y: y,
-            width: 330,
-            height: 14,
-            text: (ridesBuilt >= currentEra.ridesRequired ? "{GREEN}" : "{YELLOW}") +
-                ridesBuilt + " / " + currentEra.ridesRequired + " unique rides built"
-        });
-        y += 18;
-
-        var progressPercent = Math.min(100, Math.floor((ridesBuilt / currentEra.ridesRequired) * 100));
-        var barChars = 30;
-        var filledChars = Math.floor((progressPercent / 100) * barChars);
-        widgets.push({
-            type: "label",
-            x: 10,
-            y: y,
-            width: 330,
-            height: 14,
-            text: "{WHITE}[" + "=".repeat(filledChars) + " ".repeat(barChars - filledChars) + "] " + progressPercent + "%"
-        });
-        y += 20;
-
-        if (nextEra) {
             widgets.push({
                 type: "label",
                 x: 10,
                 y: y,
-                width: 330,
+                width: 380,
                 height: 14,
-                text: "{SILVER}Next: " + nextEra.color + nextEra.name
+                text: "{WHITE}Requirements to unlock next era:"
             });
             y += 18;
+
+            // Get current park stats
+            var currentGuests = getCurrentGuests();
+            var currentRating = getCurrentParkRating();
+            var currentCash = getCurrentCash();
+            var yearsInEra = getYearsInCurrentEra(data);
+            var ridesBuilt = progressRequirements.ridesBuilt;
+
+            // Rides requirement
+            if (req.ridesRequired > 0) {
+                var ridesColor = progressRequirements.ridesMet ? "{GREEN}" : "{YELLOW}";
+                var checkmark = progressRequirements.ridesMet ? "✓" : "-";
+                widgets.push({
+                    type: "label",
+                    x: 15,
+                    y: y,
+                    width: 365,
+                    height: 14,
+                    text: ridesColor + checkmark + " " + ridesBuilt + " / " + req.ridesRequired + " unique rides"
+                });
+                y += 14;
+            }
+
+            // Guests requirement
+            if (req.guestsRequired > 0) {
+                var guestsColor = progressRequirements.guestsMet ? "{GREEN}" : "{YELLOW}";
+                var checkmark = progressRequirements.guestsMet ? "✓" : "-";
+                widgets.push({
+                    type: "label",
+                    x: 15,
+                    y: y,
+                    width: 365,
+                    height: 14,
+                    text: guestsColor + checkmark + " " + currentGuests + " / " + req.guestsRequired + " guests in park"
+                });
+                y += 14;
+            }
+
+            // Rating requirement
+            if (req.parkRatingRequired > 0) {
+                var ratingColor = progressRequirements.ratingMet ? "{GREEN}" : "{YELLOW}";
+                var checkmark = progressRequirements.ratingMet ? "✓" : "-";
+                widgets.push({
+                    type: "label",
+                    x: 15,
+                    y: y,
+                    width: 365,
+                    height: 14,
+                    text: ratingColor + checkmark + " " + currentRating + " / " + req.parkRatingRequired + " park rating"
+                });
+                y += 14;
+            }
+
+            // Years requirement
+            if (req.yearsRequired > 0) {
+                var yearsColor = progressRequirements.yearsMet ? "{GREEN}" : "{YELLOW}";
+                var checkmark = progressRequirements.yearsMet ? "✓" : "-";
+                var yearText = req.yearsRequired === 1 ? "year" : "years";
+                widgets.push({
+                    type: "label",
+                    x: 15,
+                    y: y,
+                    width: 365,
+                    height: 14,
+                    text: yearsColor + checkmark + " " + yearsInEra + " / " + req.yearsRequired + " " + yearText + " in era"
+                });
+                y += 14;
+            }
+
+            // Cash requirement
+            if (req.cashRequired > 0) {
+                var cashColor = progressRequirements.cashMet ? "{GREEN}" : "{YELLOW}";
+                var checkmark = progressRequirements.cashMet ? "✓" : "-";
+                widgets.push({
+                    type: "label",
+                    x: 15,
+                    y: y,
+                    width: 365,
+                    height: 14,
+                    text: cashColor + checkmark + " " + formatCash(currentCash) + " / " + formatCash(req.cashRequired) + " cash"
+                });
+                y += 14;
+            }
+
+            y += 6;
+
+            // Overall progress indicator and button
+            if (progressRequirements.allMet) {
+                widgets.push({
+                    type: "label",
+                    x: 10,
+                    y: y,
+                    width: 380,
+                    height: 14,
+                    text: "{GREEN}All requirements met! Click below to progress."
+                });
+                y += 18;
+
+                // Big prominent button to progress
+                widgets.push({
+                    type: "button",
+                    x: 60,
+                    y: y,
+                    width: 260,
+                    height: 40,
+                    text: "Progress to " + ERAS[data.currentEra + 1].name,
+                    onClick: function () {
+                        var success = progressToNextEra();
+                        if (success) {
+                            ui.getWindow("era-progression-control").close();
+                            openControlWindow();
+                        }
+                    }
+                });
+                y += 48;
+            } else {
+                var metCount = 0;
+                var totalCount = 0;
+                if (req.ridesRequired > 0) { totalCount++; if (progressRequirements.ridesMet) metCount++; }
+                if (req.guestsRequired > 0) { totalCount++; if (progressRequirements.guestsMet) metCount++; }
+                if (req.parkRatingRequired > 0) { totalCount++; if (progressRequirements.ratingMet) metCount++; }
+                if (req.yearsRequired > 0) { totalCount++; if (progressRequirements.yearsMet) metCount++; }
+                if (req.cashRequired > 0) { totalCount++; if (progressRequirements.cashMet) metCount++; }
+
+                widgets.push({
+                    type: "label",
+                    x: 10,
+                    y: y,
+                    width: 380,
+                    height: 14,
+                    text: "{YELLOW}Progress: " + metCount + " / " + totalCount + " requirements met"
+                });
+                y += 18;
+            }
         } else {
             widgets.push({
                 type: "label",
                 x: 10,
                 y: y,
-                width: 330,
+                width: 380,
                 height: 14,
-                text: "{GREEN}All eras unlocked!"
+                text: "{GREEN}All eras unlocked! You've reached the modern age."
             });
             y += 18;
         }
@@ -811,7 +1125,7 @@ function openControlWindow() {
             type: "label",
             x: 10,
             y: y,
-            width: 330,
+            width: 380,
             height: 14,
             text: "{SILVER}Unlocked eras: " + data.unlockedEras.length + " / " + ERAS.length
         });
@@ -821,7 +1135,7 @@ function openControlWindow() {
             type: "label",
             x: 10,
             y: y,
-            width: 330,
+            width: 380,
             height: 14,
             text: "{YELLOW}Research funding: Disabled (Era System Active)"
         });
@@ -831,7 +1145,7 @@ function openControlWindow() {
             type: "button",
             x: 10,
             y: y,
-            width: 160,
+            width: 180,
             height: 30,
             text: "Refresh Progress",
             onClick: function () {
@@ -841,9 +1155,9 @@ function openControlWindow() {
 
         widgets.push({
             type: "button",
-            x: 180,
+            x: 200,
             y: y,
-            width: 160,
+            width: 180,
             height: 30,
             text: "Open Debug Window",
             onClick: function () {
@@ -856,7 +1170,7 @@ function openControlWindow() {
     if (!data.initialized || data.disabled) {
         widgets.push({
             type: "button",
-            x: 75,
+            x: 90,
             y: y,
             width: 200,
             height: 30,
@@ -869,8 +1183,8 @@ function openControlWindow() {
 
     ui.openWindow({
         classification: "era-progression-control",
-        title: "Era Progression System",
-        width: 350,
+        title: "Era Progression System v0.4.2",
+        width: 400,
         height: y + 40,
         widgets: widgets
     });
@@ -885,9 +1199,9 @@ function openDebugWindow() {
 
     debugWindow = ui.openWindow({
         classification: "era-debug",
-        title: "Era Progress Debug",
-        width: 500,
-        height: 600,
+        title: "Era Progress Debug v0.4.2",
+        width: 520,
+        height: 620,
         widgets: createDebugWidgets(data),
         onClose: function () {
             debugWindow = null;
@@ -910,7 +1224,7 @@ function createDebugWidgets(data) {
         type: "label",
         x: 10,
         y: y,
-        width: 480,
+        width: 500,
         height: 14,
         text: "{WHITE}System Status: " + statusText
     });
@@ -920,11 +1234,47 @@ function createDebugWidgets(data) {
         type: "label",
         x: 10,
         y: y,
-        width: 480,
+        width: 500,
         height: 14,
         text: "{WHITE}Unlocked Eras: {YELLOW}" + (data.unlockedEras ? data.unlockedEras.length : 0) + " / " + ERAS.length
     });
     y += 25;
+
+    // Current park stats
+    widgets.push({
+        type: "label",
+        x: 10,
+        y: y,
+        width: 500,
+        height: 14,
+        text: "{WHITE}━━━━━━━ CURRENT PARK STATUS ━━━━━━━"
+    });
+    y += 16;
+
+    widgets.push({
+        type: "label",
+        x: 10,
+        y: y,
+        width: 500,
+        height: 14,
+        text: "{YELLOW}Guests: " + getCurrentGuests() + " | Rating: " + getCurrentParkRating() + " | Cash: " + formatCash(getCurrentCash())
+    });
+    y += 14;
+
+    if (data.eraStartDate) {
+        var yearsInEra = getYearsInCurrentEra(data);
+        widgets.push({
+            type: "label",
+            x: 10,
+            y: y,
+            width: 500,
+            height: 14,
+            text: "{YELLOW}Years in current era: " + yearsInEra
+        });
+        y += 14;
+    }
+
+    y += 10;
 
     var currentEra = ERAS[data.currentEra];
     var currentStats = getEraStats(data.currentEra);
@@ -933,9 +1283,9 @@ function createDebugWidgets(data) {
         type: "label",
         x: 10,
         y: y,
-        width: 480,
+        width: 500,
         height: 14,
-        text: "{WHITE}━━━━━━━━━━━━━ CURRENT ERA ━━━━━━━━━━━━━"
+        text: "{WHITE}━━━━━━━━━━━ CURRENT ERA ━━━━━━━━━━━"
     });
     y += 16;
 
@@ -943,7 +1293,7 @@ function createDebugWidgets(data) {
         type: "label",
         x: 10,
         y: y,
-        width: 480,
+        width: 500,
         height: 14,
         text: currentEra.color + currentEra.name
     });
@@ -953,43 +1303,125 @@ function createDebugWidgets(data) {
         type: "label",
         x: 10,
         y: y,
-        width: 480,
+        width: 500,
         height: 14,
         text: "{SILVER}" + currentEra.description
     });
     y += 18;
 
+    // Show requirements for CURRENT era (what you need to progress)
+    if (currentStats.requirements && data.currentEra < ERAS.length - 1) {
+        var req = currentEra.requirements;
+        var status = currentStats.requirements;
+
+        widgets.push({
+            type: "label",
+            x: 10,
+            y: y,
+            width: 500,
+            height: 14,
+            text: "{WHITE}Requirements to Progress (Current Era):"
+        });
+        y += 16;
+
+        // Rides
+        if (req.ridesRequired > 0) {
+            var ridesColor = status.ridesMet ? "{GREEN}" : "{RED}";
+            widgets.push({
+                type: "label",
+                x: 20,
+                y: y,
+                width: 480,
+                height: 14,
+                text: ridesColor + status.ridesBuilt + " / " + req.ridesRequired + " rides built"
+            });
+            y += 14;
+        }
+
+        // Guests
+        if (req.guestsRequired > 0) {
+            var guestsColor = status.guestsMet ? "{GREEN}" : "{RED}";
+            widgets.push({
+                type: "label",
+                x: 20,
+                y: y,
+                width: 480,
+                height: 14,
+                text: guestsColor + status.currentGuests + " / " + req.guestsRequired + " guests"
+            });
+            y += 14;
+        }
+
+        // Rating
+        if (req.parkRatingRequired > 0) {
+            var ratingColor = status.ratingMet ? "{GREEN}" : "{RED}";
+            widgets.push({
+                type: "label",
+                x: 20,
+                y: y,
+                width: 480,
+                height: 14,
+                text: ratingColor + status.currentRating + " / " + req.parkRatingRequired + " park rating"
+            });
+            y += 14;
+        }
+
+        // Years
+        if (req.yearsRequired > 0) {
+            var yearsColor = status.yearsMet ? "{GREEN}" : "{RED}";
+            widgets.push({
+                type: "label",
+                x: 20,
+                y: y,
+                width: 480,
+                height: 14,
+                text: yearsColor + status.yearsInEra + " / " + req.yearsRequired + " years"
+            });
+            y += 14;
+        }
+
+        // Cash
+        if (req.cashRequired > 0) {
+            var cashColor = status.cashMet ? "{GREEN}" : "{RED}";
+            widgets.push({
+                type: "label",
+                x: 20,
+                y: y,
+                width: 480,
+                height: 14,
+                text: cashColor + formatCash(status.currentCash) + " / " + formatCash(req.cashRequired) + " cash"
+            });
+            y += 14;
+        }
+
+        y += 4;
+
+        widgets.push({
+            type: "label",
+            x: 10,
+            y: y,
+            width: 500,
+            height: 14,
+            text: status.allMet ? "{GREEN}ALL REQUIREMENTS MET!" : "{YELLOW}Keep working on requirements..."
+        });
+        y += 18;
+    } else if (data.currentEra >= ERAS.length - 1) {
+        widgets.push({
+            type: "label",
+            x: 10,
+            y: y,
+            width: 500,
+            height: 14,
+            text: "{GREEN}Final era reached - no more requirements!"
+        });
+        y += 18;
+    }
+
     widgets.push({
         type: "label",
         x: 10,
         y: y,
-        width: 480,
-        height: 14,
-        text: "{WHITE}Progress: " + (currentStats.isCompleted ? "{GREEN}" : "{YELLOW}") +
-            currentStats.ridesBuilt + " / " + currentEra.ridesRequired + " rides built"
-    });
-    y += 14;
-
-    var progressPercent = Math.min(100, Math.floor((currentStats.ridesBuilt / currentEra.ridesRequired) * 100));
-    var barWidth = 460;
-    var filledWidth = Math.floor((progressPercent / 100) * barWidth);
-
-    widgets.push({
-        type: "label",
-        x: 10,
-        y: y,
-        width: 480,
-        height: 14,
-        text: "{WHITE}[" + "=".repeat(Math.floor(filledWidth / 10)) +
-            " ".repeat(Math.floor((barWidth - filledWidth) / 10)) + "] " + progressPercent + "%"
-    });
-    y += 18;
-
-    widgets.push({
-        type: "label",
-        x: 10,
-        y: y,
-        width: 480,
+        width: 500,
         height: 14,
         text: "{WHITE}Content: {YELLOW}" + currentStats.totalRides + " rides {SILVER}| " +
             "{YELLOW}" + currentStats.totalStalls + " stalls {SILVER}| " +
@@ -1001,16 +1433,16 @@ function createDebugWidgets(data) {
         type: "label",
         x: 10,
         y: y,
-        width: 480,
+        width: 500,
         height: 14,
-        text: "{WHITE}━━━━━━━━━━━━━ ALL ERAS ━━━━━━━━━━━━━"
+        text: "{WHITE}━━━━━━━━━━━━ ALL ERAS ━━━━━━━━━━━━"
     });
     y += 18;
 
     for (var i = 0; i < ERAS.length; i++) {
         var stats = getEraStats(i);
         var status = "";
-        var color = "{SILVER}";
+        var color = "{WHITE}";
 
         if (!stats.isUnlocked) {
             status = "LOCKED";
@@ -1023,30 +1455,42 @@ function createDebugWidgets(data) {
             color = "{GREEN}";
         } else {
             status = "UNLOCKED";
-            color = "{PALEGREEN}";
+            color = "{LIGHT_BLUE}";
         }
 
         widgets.push({
             type: "label",
             x: 10,
             y: y,
-            width: 480,
+            width: 500,
             height: 14,
             text: color + "Era " + (i + 1) + ": " + stats.era.name + " [" + status + "]"
         });
         y += 14;
 
         if (stats.isUnlocked || stats.isCurrent) {
-            widgets.push({
-                type: "label",
-                x: 30,
-                y: y,
-                width: 460,
-                height: 14,
-                text: "{SILVER}" + stats.ridesBuilt + "/" + stats.era.ridesRequired +
-                    " rides | " + stats.totalItems + " total items"
-            });
-            y += 14;
+            var req = stats.era.requirements;
+            var reqText = "";
+            var reqParts = [];
+
+            if (req.ridesRequired > 0) reqParts.push(req.ridesRequired + " rides");
+            if (req.guestsRequired > 0) reqParts.push(req.guestsRequired + " guests");
+            if (req.parkRatingRequired > 0) reqParts.push(req.parkRatingRequired + " rating");
+            if (req.yearsRequired > 0) reqParts.push(req.yearsRequired + "y");
+            if (req.cashRequired > 0) reqParts.push(formatCash(req.cashRequired));
+
+            if (reqParts.length > 0) {
+                reqText = reqParts.join(", ");
+                widgets.push({
+                    type: "label",
+                    x: 30,
+                    y: y,
+                    width: 470,
+                    height: 14,
+                    text: "{SILVER}Requires: " + reqText
+                });
+                y += 14;
+            }
         }
 
         y += 2;
@@ -1054,103 +1498,14 @@ function createDebugWidgets(data) {
 
     y += 10;
 
-    widgets.push({
-        type: "label",
-        x: 10,
-        y: y,
-        width: 480,
-        height: 14,
-        text: "{WHITE}━━━━━━━━━━━━━ DEBUG INFO ━━━━━━━━━━━━━"
-    });
-    y += 16;
-
-    widgets.push({
-        type: "label",
-        x: 10,
-        y: y,
-        width: 480,
-        height: 14,
-        text: "{SILVER}Total rides in park: " + map.rides.length
-    });
-    y += 14;
-
-    var rideIdentifiersFound = [];
-    for (var i = 0; i < map.rides.length; i++) {
-        var ride = map.rides[i];
-        if (ride.classification === 'ride') {
-            var identifier = getRideIdentifier(ride);
-            if (identifier) {
-                rideIdentifiersFound.push(identifier);
-            }
-        }
-    }
-
-    widgets.push({
-        type: "label",
-        x: 10,
-        y: y,
-        width: 480,
-        height: 14,
-        text: "{SILVER}Rides with 'ride' classification: " + rideIdentifiersFound.length
-    });
-    y += 14;
-
-    if (rideIdentifiersFound.length > 0) {
-        var displayIds = rideIdentifiersFound.slice(0, 5).join(", ");
-        if (rideIdentifiersFound.length > 5) {
-            displayIds += "...";
-        }
-        widgets.push({
-            type: "label",
-            x: 10,
-            y: y,
-            width: 480,
-            height: 14,
-            text: "{YELLOW}Found: " + displayIds
-        });
-        y += 14;
-    }
-
-    var currentEraRideIds = [];
-    var currentEra = ERAS[data.currentEra];
-    for (var i = 0; i < currentEra.items.length; i++) {
-        var id = currentEra.items[i];
-        if (id.indexOf('.ride.') !== -1 && id.indexOf('.scenery_group.') === -1) {
-            currentEraRideIds.push(id);
-        }
-    }
-
-    var displayExpected = currentEraRideIds.slice(0, 5).join(", ");
-    if (currentEraRideIds.length > 5) {
-        displayExpected += "... (+" + (currentEraRideIds.length - 5) + " more)";
-    }
-    widgets.push({
-        type: "label",
-        x: 10,
-        y: y,
-        width: 480,
-        height: 14,
-        text: "{YELLOW}Expected: " + displayExpected
-    });
-    y += 20;
-
-    widgets.push({
-        type: "label",
-        x: 10,
-        y: y,
-        width: 480,
-        height: 14,
-        text: "{SILVER}Click Refresh after building rides to update counts"
-    });
-    y += 18;
-
+    // Control buttons
     widgets.push({
         type: "button",
         x: 10,
         y: y,
-        width: 150,
+        width: 120,
         height: 28,
-        text: "REFRESH DATA",
+        text: "REFRESH",
         onClick: function () {
             refreshDebugWindow();
         }
@@ -1158,9 +1513,9 @@ function createDebugWidgets(data) {
 
     widgets.push({
         type: "button",
-        x: 170,
+        x: 140,
         y: y,
-        width: 150,
+        width: 120,
         height: 28,
         text: "Check Progress",
         onClick: function () {
@@ -1171,14 +1526,32 @@ function createDebugWidgets(data) {
 
     widgets.push({
         type: "button",
-        x: 330,
+        x: 270,
         y: y,
-        width: 150,
+        width: 120,
         height: 28,
         text: "Reset Research",
         onClick: function () {
             resetResearchSystem();
             ui.showError("Research Reset", "Research table synced to unlocked eras");
+        }
+    });
+
+    widgets.push({
+        type: "button",
+        x: 400,
+        y: y,
+        width: 110,
+        height: 28,
+        text: "Add Year",
+        onClick: function () {
+            var data = getStorage();
+            if (data.eraStartDate) {
+                data.eraStartDate.year--;
+                saveStorage(data);
+                refreshDebugWindow();
+                ui.showError("Debug", "Added 1 year to era time");
+            }
         }
     });
 
@@ -1188,7 +1561,7 @@ function createDebugWidgets(data) {
         type: "button",
         x: 10,
         y: y,
-        width: 150,
+        width: 120,
         height: 28,
         text: "◀ Previous Era",
         onClick: function () {
@@ -1212,10 +1585,23 @@ function createDebugWidgets(data) {
                 }
                 data.unlockedEras = newUnlockedEras;
 
+                // Reset era start date
+                data.eraStartDate = {
+                    year: date.year,
+                    month: date.month,
+                    day: date.day
+                };
+
                 saveStorage(data);
                 markUnlockedErasAsResearched(data);
                 refreshDebugWindow();
                 ui.showError("Era Changed", "Moved to " + ERAS[data.currentEra].name);
+
+                var controlWindow = ui.getWindow("era-progression-control");
+                if (controlWindow) {
+                    controlWindow.close();
+                    openControlWindow();
+                }
             } else {
                 ui.showError("Cannot Go Back", "Already at first era");
             }
@@ -1224,9 +1610,9 @@ function createDebugWidgets(data) {
 
     widgets.push({
         type: "button",
-        x: 170,
+        x: 140,
         y: y,
-        width: 150,
+        width: 120,
         height: 28,
         text: "Next Era ▶",
         onClick: function () {
@@ -1237,17 +1623,36 @@ function createDebugWidgets(data) {
             }
 
             if (data.currentEra < ERAS.length - 1) {
+                // Debug mode: Don't deduct cash
                 data.currentEra++;
+
                 if (!data.unlockedEras) {
                     data.unlockedEras = [0];
                 }
                 if (data.unlockedEras.indexOf(data.currentEra) === -1) {
                     data.unlockedEras.push(data.currentEra);
                 }
+
+                // Reset era start date
+                data.eraStartDate = {
+                    year: date.year,
+                    month: date.month,
+                    day: date.day
+                };
+
+                // Clear ready flag
+                data.readyToProgress = false;
+
                 saveStorage(data);
-                markEraAsResearched(data.currentEra);
+                markUnlockedErasAsResearched(data);
                 refreshDebugWindow();
-                ui.showError("Advanced!", "Moved to " + ERAS[data.currentEra].name);
+                ui.showError("Era Changed", "Moved to " + ERAS[data.currentEra].name);
+
+                var controlWindow = ui.getWindow("era-progression-control");
+                if (controlWindow) {
+                    controlWindow.close();
+                    openControlWindow();
+                }
             } else {
                 ui.showError("Cannot Advance", "Already at final era");
             }
@@ -1256,34 +1661,34 @@ function createDebugWidgets(data) {
 
     widgets.push({
         type: "button",
-        x: 330,
+        x: 270,
         y: y,
-        width: 150,
+        width: 240,
         height: 28,
         text: "Reset System",
         onClick: function () {
             var data = getStorage();
 
+            // Safeguard: Don't allow resetting if system is already disabled
+            if (data.disabled) {
+                ui.showError("Already Disabled", "System is already disabled. Nothing to reset.");
+                return;
+            }
+
             if (data.backupResearch) {
                 console.log("Restoring backed up research state...");
 
-                // CRITICAL FIX: Unload objects AFTER restoring research
-                // This prevents invalid object references
-
-                // Build restored arrays using IDENTIFIERS to look up current indices
                 var restoredInvented = [];
                 var restoredUninvented = [];
 
                 var skippedInvented = 0;
                 var skippedUninvented = 0;
 
-                // Restore invented items by looking up current object indices
                 for (var i = 0; i < data.backupResearch.inventedItems.length; i++) {
                     var item = data.backupResearch.inventedItems[i];
                     var objectType = item.type === 'ride' ? 'ride' : 'scenery_group';
 
                     try {
-                        // Look up current object by identifier
                         var loadedObjects = objectManager.getAllObjects(objectType);
                         var foundObj = null;
 
@@ -1297,7 +1702,7 @@ function createDebugWidgets(data) {
                         if (foundObj) {
                             var restoredItem = {
                                 type: item.type,
-                                object: foundObj.index  // Use current index, not old one
+                                object: foundObj.index
                             };
                             if (item.category !== undefined) {
                                 restoredItem.category = item.category;
@@ -1316,7 +1721,6 @@ function createDebugWidgets(data) {
                     }
                 }
 
-                // Restore uninvented items by looking up current object indices
                 for (var i = 0; i < data.backupResearch.uninventedItems.length; i++) {
                     var item = data.backupResearch.uninventedItems[i];
                     var objectType = item.type === 'ride' ? 'ride' : 'scenery_group';
@@ -1354,16 +1758,13 @@ function createDebugWidgets(data) {
                     }
                 }
 
-                // Apply research arrays with magic sequence
                 park.research.inventedItems = restoredInvented;
                 park.research.uninventedItems = restoredUninvented;
                 park.research.inventedItems = restoredInvented;
 
-                // Restore research funding and reset progress
                 park.research.funding = data.backupResearch.funding;
                 park.research.progress = 0;
 
-                // NOW unload objects that weren't in the original backup
                 var currentLoadedRides = objectManager.getAllObjects("ride");
                 var originalObjects = {};
                 for (var i = 0; i < data.backupResearch.loadedObjects.length; i++) {
@@ -1384,7 +1785,6 @@ function createDebugWidgets(data) {
                     }
                 }
 
-                // Mark system as disabled
                 var storage = context.getParkStorage();
                 storage.set(STORAGE_KEY, JSON.stringify({
                     currentEra: 0,
@@ -1392,7 +1792,9 @@ function createDebugWidgets(data) {
                     unlockedEras: [],
                     initialized: false,
                     disabled: true,
-                    backupResearch: null
+                    backupResearch: null,
+                    eraStartDate: null,
+                    readyToProgress: false
                 }));
 
                 console.log("Restored research state:");
@@ -1402,6 +1804,12 @@ function createDebugWidgets(data) {
                 console.log("  - Unloaded objects: " + unloadedCount);
 
                 ui.showError("Reset Complete!", "Original state restored (" + unloadedCount + " objects unloaded)");
+
+                // Close debug window if open
+                if (debugWindow) {
+                    debugWindow.close();
+                    debugWindow = null;
+                }
             } else {
                 var storage = context.getParkStorage();
                 storage.set(STORAGE_KEY, JSON.stringify({
@@ -1410,7 +1818,9 @@ function createDebugWidgets(data) {
                     unlockedEras: [],
                     initialized: false,
                     disabled: true,
-                    backupResearch: null
+                    backupResearch: null,
+                    eraStartDate: null,
+                    readyToProgress: false
                 }));
 
                 park.research.uninventedItems = park.research.inventedItems.concat(park.research.uninventedItems);
@@ -1421,7 +1831,11 @@ function createDebugWidgets(data) {
                 ui.showError("Reset!", "No backup found - research cleared");
             }
 
-            refreshDebugWindow();
+            // Close debug window if open
+            if (debugWindow) {
+                debugWindow.close();
+                debugWindow = null;
+            }
 
             var controlWindow = ui.getWindow("era-progression-control");
             if (controlWindow) {
@@ -1456,10 +1870,13 @@ function dailyCheck() {
 
     checkEraProgression();
     disableResearchFunding();
+
+    // Re-sync research items daily to prevent OpenRCT2 from changing them
+    markUnlockedErasAsResearched(data);
 }
 
 function main() {
-    console.log("Era-Based Progression System v0.3.3 loaded!");
+    console.log("Era-Based Progression System v0.4.2 loaded!");
 
     if (typeof park === 'undefined') {
         return;
@@ -1478,7 +1895,7 @@ function main() {
 
 registerPlugin({
     name: "Era-Based Progression System",
-    version: "0.3.4",
+    version: "0.4.2",
     authors: ["Floatey"],
     type: "remote",
     licence: "MIT",
