@@ -18,7 +18,7 @@ var ERAS = [
     {
         name: "Antique Amusement (1890s-1910s)",
         description: "The birth of the amusement park",
-        ridesRequired: 5,
+        ridesRequired: 8,
         color: "{BROWN}",
         items: [
             // Rides
@@ -136,7 +136,7 @@ var ERAS = [
     {
         name: "Extreme Innovation (1980s)",
         description: "Water rides and suspended thrills",
-        ridesRequired: 8,
+        ridesRequired: 6,
         color: "{CYAN}",
         items: [
             // Water Rides
