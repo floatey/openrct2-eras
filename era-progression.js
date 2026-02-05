@@ -664,7 +664,7 @@ function openControlWindow() {
             y: y,
             width: 160,
             height: 30,
-            text: "🔄 Refresh Progress",
+            text: "Refresh Progress",
             onClick: function() {
                 openControlWindow();
             }
@@ -987,7 +987,7 @@ function createDebugWidgets(data) {
         y: y,
         width: 150,
         height: 28,
-        text: "🔄 REFRESH DATA",
+        text: "REFRESH DATA",
         onClick: function() {
             refreshDebugWindow();
         }
