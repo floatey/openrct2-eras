@@ -1,8 +1,9 @@
-# Era Progression System !! ALPHA, BACKUP YOUR SAVE BEFORE EXPERIMENTING
+# Era Progression System
+!! THIS PLUGIN IS IN DEVELOPMENT, PLEASE BACKUP YOUR SAVES BEFORE YOU TRY IT OUT !!
 
 OpenRCT2 plugin — progress era by era, unlock more rides by building rides.
 
-**v3.5.0** • API 77+ • MIT
+**v0.2.0** • API 77+ • MIT
 
 ## Quick Start
 
@@ -20,6 +21,7 @@ OpenRCT2 plugin — progress era by era, unlock more rides by building rides.
 - **Contemporary (2000s+)** — 18 rides
 
 Research is **disabled**. Only era-appropriate content is available. 
+All rides required for this plugin are enabled in the scenario upon initialization. (excluding rct2ww, rct2tt, rct1ll, rct1)
 
 ## Links
 
