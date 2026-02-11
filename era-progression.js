@@ -3,12 +3,75 @@
 /**
  * OpenRCT2 Era-Based Progression System
  * 
- * Version: 0.4.2
+ * Version: 0.5.0
  * Author: Floatey
  * License: MIT
+ *
+ * == Architecture: Two-Layer Object Management ==
+ *
+ * OpenRCT2 has TWO separate systems for managing what the player can build:
+ *
+ * Layer 1 - OBJECT SELECTION (objectManager.load / unload / getAllObjects)
+ *   Controls which ride/scenery objects occupy a "slot" in the scenario.
+ *   An object must be loaded before it can appear anywhere in the game.
+ *   objectManager.load(identifier) -> { index } or null
+ *   objectManager.unload(identifier) -> removes from scenario entirely
+ *
+ * Layer 2 - RESEARCH TABLE (park.research.inventedItems / uninventedItems)
+ *   Controls which *loaded* objects are "invented" (buildable) vs "uninvented"
+ *   (locked behind research). Each entry is { type, object: <slot index> }.
+ *   A loaded object in NEITHER list is in limbo – slot occupied but inaccessible.
+ *
+ * This plugin manages both layers:
+ *   - On init: backs up original state, loads era 0 objects, unloads non-era
+ *     objects, rebuilds research table.
+ *   - On progression: loads new era objects, rebuilds research table.
+ *   - On regression (debug): unloads era objects, rebuilds research table.
+ *   - Daily: rebuilds research table to prevent OpenRCT2 drift.
  */
 
 // ========== ERA DEFINITIONS ==========
+
+// Essential items that are immediately available (pre-invented) when an era unlocks
+// Format: { rides: [ids], stalls: [ids] }
+var ERA_ESSENTIALS = [
+    {
+        // Era 0: Antique Amusement - Extra essentials for starting
+        rides: ["rct2.ride.mgr1", "rct1.ride.horses", "rct2.ride.lift1"],
+        stalls: ["rct2.ride.tlt1", "rct1.ride.toilets", "rct2.ride.hotds", "rct2.ride.drnks"],
+        scenery: ["rct2.scenery_group.scggardn", "rct2.scenery_group.scgtrees", "rct2.scenery_group.scgfence", "rct2.scenery_group.scgpathx"]
+    },
+    {
+        // Era 1: Classic Coasters
+        rides: ["rct2.ride.ptct2", "rct2.ride.dodg1", "rct2.ride.clift1"],
+        stalls: ["rct2.ride.burgb", "rct2.ride.coffs"]
+    },
+    {
+        // Era 2: Transition Era
+        rides: ["rct2.ride.smc1", "rct2.ride.twist1", "rct2.ride.mono1"],
+        stalls: ["rct2.ride.icecr1", "rct2.ride.dough"]
+    },
+    {
+        // Era 3: Steel Renaissance
+        rides: ["rct2.ride.arrt1", "rct2.ride.enterp", "rct2.ride.scht1"],
+        stalls: ["rct2.ride.pizzs", "rct2.ride.icecr2"]
+    },
+    {
+        // Era 4: Extreme Innovation
+        rides: ["rct2.ride.rapboat", "rct2.ride.swsh1", "rct2.ride.arrsw1"],
+        stalls: ["rct2.ride.substl", "rct2.ride.sqdst"]
+    },
+    {
+        // Era 5: Modern Thrill Revolution
+        rides: ["rct2.ride.arrt2", "rct2.ride.topsp1", "rct2.ride.slct"],
+        stalls: ["rct2.ride.frnood", "rct2.ride.wonton"]
+    },
+    {
+        // Era 6: Millennium Age
+        rides: ["rct2.ride.bmsd", "rct2.ride.intst", "rct2.ride.intinv"],
+        stalls: ["rct2tt.ride.softoyst", "rct2tt.ride.moonjuce"]
+    }
+];
 
 var ERAS = [
     {
@@ -334,7 +397,7 @@ var ERAS = [
 
 // ========== STORAGE & STATE ==========
 
-var STORAGE_KEY = "eraProgressionData_v7";
+var STORAGE_KEY = "eraProgressionData_v8";
 var debugWindow = null;
 
 function getStorage() {
@@ -412,69 +475,331 @@ function formatCash(amount) {
     return "$" + amount.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-// ========== RCT2 RIDE ENABLER ==========
+// ========== LAYER 1: OBJECT SELECTION MANAGEMENT ==========
+// These functions manage which objects are loaded into scenario slots.
+// Objects must be loaded (Layer 1) before they can appear in research (Layer 2).
 
 /**
- * Enable all RCT2 rides in the scenario
+ * Determine the objectManager type from an identifier string.
+ * "rct2.scenery_group.xyz" -> "scenery_group", everything else -> "ride"
  */
-function enableAllRCT2Rides() {
-    console.log("Loading all RCT2 rides into scenario...");
+function getObjectManagerType(identifier) {
+    return identifier.indexOf('.scenery_group.') !== -1 ? 'scenery_group' : 'ride';
+}
 
-    var loadedCount = 0;
-    var failedCount = 0;
-    var skippedCount = 0;
-    var allInstalled = objectManager.installedObjects;
+/**
+ * Look up the slot index for a currently-loaded object by identifier.
+ * Returns -1 if not loaded. The slot index is what the research table references.
+ */
+function findLoadedSlotIndex(identifier) {
+    var objType = getObjectManagerType(identifier);
+    var loaded = objectManager.getAllObjects(objType);
+    for (var i = 0; i < loaded.length; i++) {
+        if (loaded[i].identifier === identifier) {
+            return loaded[i].index;
+        }
+    }
+    return -1;
+}
 
-    for (var i = 0; i < allInstalled.length; i++) {
-        var installedObj = allInstalled[i];
-        var objectId = installedObj.identifier;
+/**
+ * Check if an object is currently loaded in the scenario's object selection.
+ */
+function isObjectInScenario(identifier) {
+    return findLoadedSlotIndex(identifier) !== -1;
+}
 
-        if (installedObj.type === "ride" && objectId.indexOf("rct2.ride.") === 0) {
-            var alreadyLoaded = false;
-            var loadedObjects = objectManager.getAllObjects("ride");
-            for (var j = 0; j < loadedObjects.length; j++) {
-                if (loadedObjects[j].identifier === objectId) {
-                    alreadyLoaded = true;
-                    skippedCount++;
-                    break;
-                }
+/**
+ * Load a single object into the scenario's object selection (Layer 1).
+ * Does NOT add to research table – call rebuildResearchTable() afterward.
+ */
+function loadObjectIntoScenario(identifier) {
+    try {
+        var result = objectManager.load(identifier);
+        if (result !== null) {
+            console.log("Loaded into scenario: " + identifier + " (slot " + result.index + ")");
+            return result;
+        }
+        console.log("Failed to load (null return): " + identifier);
+        return null;
+    } catch (e) {
+        console.log("Error loading " + identifier + ": " + e);
+        return null;
+    }
+}
+
+/**
+ * Unload a single object from the scenario's object selection (Layer 1).
+ * Also removes dangling research table entries to prevent stale slot references.
+ */
+function unloadObjectFromScenario(identifier) {
+    var slotIndex = findLoadedSlotIndex(identifier);
+    if (slotIndex === -1) return false;
+
+    // Clean up research table BEFORE unloading to avoid dangling slot references
+    removeSlotFromResearchTable(slotIndex);
+
+    try {
+        objectManager.unload(identifier);
+        console.log("Unloaded from scenario: " + identifier);
+        return true;
+    } catch (e) {
+        console.log("Failed to unload " + identifier + ": " + e);
+        return false;
+    }
+}
+
+/**
+ * Load all objects for a specific era into the scenario (Layer 1 only).
+ * Already-loaded objects are skipped. Call rebuildResearchTable() afterward.
+ */
+function loadEraIntoScenario(eraIndex) {
+    if (eraIndex < 0 || eraIndex >= ERAS.length) return { loaded: 0, skipped: 0, failed: 0 };
+
+    var era = ERAS[eraIndex];
+    var loaded = 0, skipped = 0, failed = 0;
+
+    for (var i = 0; i < era.items.length; i++) {
+        if (isObjectInScenario(era.items[i])) { skipped++; continue; }
+        if (loadObjectIntoScenario(era.items[i])) { loaded++; } else { failed++; }
+    }
+
+    console.log("Era " + eraIndex + " (" + era.name + "): loaded=" + loaded + " skipped=" + skipped + " failed=" + failed);
+    return { loaded: loaded, skipped: skipped, failed: failed };
+}
+
+/**
+ * Unload objects from a specific era that are no longer needed (Layer 1).
+ * Protects objects needed by other unlocked eras or from the original scenario.
+ */
+function unloadEraFromScenario(eraIndex, data) {
+    if (eraIndex < 0 || eraIndex >= ERAS.length) return 0;
+
+    var era = ERAS[eraIndex];
+
+    // Objects still needed by other unlocked eras
+    var stillNeeded = {};
+    for (var i = 0; i < data.unlockedEras.length; i++) {
+        if (data.unlockedEras[i] === eraIndex) continue;
+        var otherEra = ERAS[data.unlockedEras[i]];
+        for (var j = 0; j < otherEra.items.length; j++) {
+            stillNeeded[otherEra.items[j]] = true;
+        }
+    }
+
+    // Objects from the original scenario backup (never unload these)
+    var originalObjects = {};
+    if (data.backupResearch && data.backupResearch.loadedObjects) {
+        for (var i = 0; i < data.backupResearch.loadedObjects.length; i++) {
+            originalObjects[data.backupResearch.loadedObjects[i]] = true;
+        }
+    }
+
+    var unloaded = 0;
+    for (var i = 0; i < era.items.length; i++) {
+        var id = era.items[i];
+        if (stillNeeded[id] || originalObjects[id]) continue;
+        if (unloadObjectFromScenario(id)) unloaded++;
+    }
+    return unloaded;
+}
+
+/**
+ * Unload all scenario objects NOT in any unlocked era.
+ * Called during initialization to clear the scenario's default object selection.
+ */
+function unloadNonEraObjects(data) {
+    var keepIds = {};
+    for (var i = 0; i < data.unlockedEras.length; i++) {
+        var era = ERAS[data.unlockedEras[i]];
+        for (var j = 0; j < era.items.length; j++) keepIds[era.items[j]] = true;
+    }
+
+    var types = ["ride", "scenery_group"];
+    var unloaded = 0;
+    for (var t = 0; t < types.length; t++) {
+        var all = objectManager.getAllObjects(types[t]);
+        for (var i = 0; i < all.length; i++) {
+            if (!keepIds[all[i].identifier]) {
+                removeSlotFromResearchTable(all[i].index);
+                try { objectManager.unload(all[i].identifier); unloaded++; } catch (e) { /* in use */ }
             }
+        }
+    }
+    console.log("Cleaned " + unloaded + " non-era objects from scenario");
+    return unloaded;
+}
 
-            if (!alreadyLoaded) {
-                try {
-                    var loadedObj = objectManager.load(objectId);
+// ========== LAYER 2: RESEARCH TABLE MANAGEMENT ==========
+// These functions manage which loaded objects are "invented" vs "uninvented".
+// An object must already be loaded (Layer 1) to have a research table entry.
 
-                    if (loadedObj !== null) {
-                        park.research.uninventedItems.push({
-                            type: "ride",
-                            object: loadedObj.index
-                        });
-                        loadedCount++;
-                        console.log("Loaded and added to research: " + objectId);
-                    } else {
-                        failedCount++;
-                        console.log("Failed to load: " + objectId);
-                    }
-                } catch (e) {
-                    failedCount++;
-                    console.log("Error loading " + objectId + ": " + e);
-                }
+/**
+ * Remove all research entries referencing a specific slot index.
+ * Must be called BEFORE unloading an object to avoid dangling references.
+ */
+function removeSlotFromResearchTable(slotIndex) {
+    park.research.inventedItems = park.research.inventedItems.filter(function (item) {
+        return item.object !== slotIndex;
+    });
+    park.research.uninventedItems = park.research.uninventedItems.filter(function (item) {
+        return item.object !== slotIndex;
+    });
+    // Double-set to force OpenRCT2 to recognize the change
+    var tmp = park.research.inventedItems;
+    park.research.inventedItems = tmp;
+}
+
+/**
+ * Resolve a research table entry back to its identifier string.
+ * Research entries store slot indices, not identifiers.
+ */
+function resolveResearchItemIdentifier(researchItem) {
+    try {
+        var objType = researchItem.type === 'ride' ? 'ride' : 'scenery_group';
+        var obj = objectManager.getObject(objType, researchItem.object);
+        return obj ? obj.identifier : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
+ * Rebuild the ENTIRE research table from scratch.
+ *
+ * This is the authoritative sync between Layer 1 and Layer 2.
+ * It scans every loaded object in the scenario and places each into either
+ * inventedItems (if its identifier is in an unlocked era) or uninventedItems.
+ *
+ * New behavior:
+ * - Essential items from current era -> invented
+ * - All items from previous eras -> invented (reward for progression)
+ * - Non-essential items from current era -> uninvented (to be researched)
+ * - Items from future eras -> uninvented
+ */
+function rebuildResearchTable(data) {
+    if (data.disabled) return;
+
+    // Build lookup for essential items in current era
+    var essentialIds = {};
+    if (data.currentEra >= 0 && data.currentEra < ERA_ESSENTIALS.length) {
+        var essentials = ERA_ESSENTIALS[data.currentEra];
+        if (essentials.rides) {
+            for (var i = 0; i < essentials.rides.length; i++) {
+                essentialIds[essentials.rides[i]] = true;
+            }
+        }
+        if (essentials.stalls) {
+            for (var i = 0; i < essentials.stalls.length; i++) {
+                essentialIds[essentials.stalls[i]] = true;
+            }
+        }
+        if (essentials.scenery) {
+            for (var i = 0; i < essentials.scenery.length; i++) {
+                essentialIds[essentials.scenery[i]] = true;
             }
         }
     }
 
-    console.log("Summary:");
-    console.log("  - Loaded: " + loadedCount + " RCT2 rides");
-    console.log("  - Already in scenario: " + skippedCount);
-    console.log("  - Failed: " + failedCount);
+    // Build lookup for ALL items from previous eras (should all be invented)
+    var previousEraIds = {};
+    for (var i = 0; i < data.currentEra; i++) {
+        if (i >= 0 && i < ERAS.length) {
+            var era = ERAS[i];
+            for (var j = 0; j < era.items.length; j++) {
+                previousEraIds[era.items[j]] = true;
+            }
+        }
+    }
 
-    return loadedCount;
+    // Build lookup for current era items
+    var currentEraIds = {};
+    if (data.currentEra >= 0 && data.currentEra < ERAS.length) {
+        var currentEra = ERAS[data.currentEra];
+        for (var i = 0; i < currentEra.items.length; i++) {
+            currentEraIds[currentEra.items[i]] = true;
+        }
+    }
+
+    // Gather all existing research entries into one pool
+    var allEntries = park.research.inventedItems.concat(park.research.uninventedItems);
+
+    // Track which slot indices we've already seen (to find orphans)
+    var seenSlots = {};
+    for (var i = 0; i < allEntries.length; i++) {
+        seenSlots[allEntries[i].type + ":" + allEntries[i].object] = true;
+    }
+
+    // Scan loaded rides for orphans (loaded but missing from research table)
+    var loadedRides = objectManager.getAllObjects("ride");
+    for (var i = 0; i < loadedRides.length; i++) {
+        var key = "ride:" + loadedRides[i].index;
+        if (!seenSlots[key]) {
+            allEntries.push({ type: "ride", object: loadedRides[i].index });
+            console.log("Recovered orphaned ride: " + loadedRides[i].identifier + " (slot " + loadedRides[i].index + ")");
+        }
+    }
+
+    // Scan loaded scenery groups for orphans
+    var loadedScenery = objectManager.getAllObjects("scenery_group");
+    for (var i = 0; i < loadedScenery.length; i++) {
+        var key = "scenery:" + loadedScenery[i].index;
+        if (!seenSlots[key]) {
+            allEntries.push({ type: "scenery", object: loadedScenery[i].index });
+            console.log("Recovered orphaned scenery: " + loadedScenery[i].identifier + " (slot " + loadedScenery[i].index + ")");
+        }
+    }
+
+    // Sort entries based on new logic
+    var newInvented = [];
+    var newUninvented = [];
+
+    for (var i = 0; i < allEntries.length; i++) {
+        var entry = allEntries[i];
+        var identifier = resolveResearchItemIdentifier(entry);
+
+        if (identifier) {
+            // Essential items from current era -> invented
+            if (essentialIds[identifier]) {
+                newInvented.push(entry);
+            }
+            // All items from previous eras -> invented (reward)
+            else if (previousEraIds[identifier]) {
+                newInvented.push(entry);
+            }
+            // Non-essential items from current era -> uninvented (to research)
+            else if (currentEraIds[identifier]) {
+                newUninvented.push(entry);
+            }
+            // Items from future/unknown eras -> uninvented
+            else {
+                newUninvented.push(entry);
+            }
+        } else {
+            // Unknown items default to uninvented
+            newUninvented.push(entry);
+        }
+    }
+
+    // Apply – double-set inventedItems to force OpenRCT2 to recognize the change
+    park.research.inventedItems = newInvented;
+    park.research.uninventedItems = newUninvented;
+    park.research.inventedItems = newInvented;
+
+    console.log("Research table rebuilt: " + newInvented.length + " invented, " + newUninvented.length + " uninvented");
 }
 
 // ========== CORE FUNCTIONS ==========
 
 /**
- * Initialize the system
+ * Initialize the era system on a fresh scenario.
+ *
+ * Flow:
+ * 1. Back up the scenario's current state (both layers)
+ * 2. Load era 0 objects into scenario (Layer 1)
+ * 3. Unload non-era objects from scenario (Layer 1)
+ * 4. Rebuild research table so only era 0 items are invented (Layer 2)
+ * 5. Disable research funding
  */
 function initializeEraSystem() {
     var data = getStorage();
@@ -491,15 +816,16 @@ function initializeEraSystem() {
         day: date.day
     };
 
-    // Backup using object IDENTIFIERS, not indices
+    // -- Step 1: Back up current scenario state --
+    // Store identifiers (not slot indices) because indices shift when objects load/unload.
     data.backupResearch = {
         inventedItems: [],
         uninventedItems: [],
         funding: park.research.funding,
-        loadedObjects: []
+        loadedObjects: []   // All identifiers loaded in scenario before we modify it
     };
 
-    // Backup invented items with IDENTIFIERS
+    // Back up invented research items by identifier
     for (var i = 0; i < park.research.inventedItems.length; i++) {
         var item = park.research.inventedItems[i];
         var objectType = item.type === 'ride' ? 'ride' : 'scenery_group';
@@ -515,7 +841,7 @@ function initializeEraSystem() {
         }
     }
 
-    // Backup uninvented items with IDENTIFIERS
+    // Back up uninvented research items by identifier
     for (var i = 0; i < park.research.uninventedItems.length; i++) {
         var item = park.research.uninventedItems[i];
         var objectType = item.type === 'ride' ? 'ride' : 'scenery_group';
@@ -531,115 +857,48 @@ function initializeEraSystem() {
         }
     }
 
-    // Backup currently loaded ride objects
+    // Back up ALL loaded object identifiers (rides + scenery groups)
     var loadedRides = objectManager.getAllObjects("ride");
     for (var i = 0; i < loadedRides.length; i++) {
         data.backupResearch.loadedObjects.push(loadedRides[i].identifier);
     }
+    var loadedScenery = objectManager.getAllObjects("scenery_group");
+    for (var i = 0; i < loadedScenery.length; i++) {
+        data.backupResearch.loadedObjects.push(loadedScenery[i].identifier);
+    }
 
-    console.log("Backed up research state:");
-    console.log("  - Invented items: " + data.backupResearch.inventedItems.length);
-    console.log("  - Uninvented items: " + data.backupResearch.uninventedItems.length);
-    console.log("  - Loaded objects: " + data.backupResearch.loadedObjects.length);
-    console.log("  - Funding level: " + data.backupResearch.funding);
+    console.log("Backed up scenario state:");
+    console.log("  Invented: " + data.backupResearch.inventedItems.length);
+    console.log("  Uninvented: " + data.backupResearch.uninventedItems.length);
+    console.log("  Loaded objects: " + data.backupResearch.loadedObjects.length);
 
-    var loadedCount = enableAllRCT2Rides();
+    // -- Step 2: Load era 0 objects into scenario (Layer 1) --
+    var result = loadEraIntoScenario(0);
 
-    markUnlockedErasAsResearched(data);
+    // -- Step 3: Unload non-era objects (Layer 1) --
+    unloadNonEraObjects(data);
 
-    park.research.funding = 0;
+    // -- Step 4: Rebuild research table (Layer 2) --
+    rebuildResearchTable(data);
+
+    // -- Step 5: Set default research funding --
+    park.research.funding = 2;  // Default: Maximum funding
+    // -- Step 5: Set default research funding --
+    park.research.funding = 2;  // Default: Maximum funding
 
     data.initialized = true;
     saveStorage(data);
 
     console.log("Era Progression System initialized!");
-    console.log("Loaded " + loadedCount + " RCT2 rides into the scenario.");
 
     park.postMessage({
         type: 'award',
-        text: "Era System initialized!\nLoaded " + loadedCount + " RCT2 rides."
+        text: "Era System initialized!\n" + ERAS[0].name + " (" + result.loaded + " objects loaded)"
     });
 }
 
-/**
- * Mark all items from all unlocked eras as researched
- */
-function markUnlockedErasAsResearched(data) {
-    if (data.disabled) {
-        console.log("System is disabled - skipping era research update");
-        return;
-    }
-
-    var allUnlockedItems = {};
-
-    for (var i = 0; i < data.unlockedEras.length; i++) {
-        var eraIndex = data.unlockedEras[i];
-        if (eraIndex >= 0 && eraIndex < ERAS.length) {
-            var era = ERAS[eraIndex];
-            for (var j = 0; j < era.items.length; j++) {
-                allUnlockedItems[era.items[j]] = true;
-            }
-        }
-    }
-
-    var allItems = park.research.inventedItems.concat(park.research.uninventedItems);
-    var newInvented = [];
-    var newUninvented = [];
-
-    for (var i = 0; i < allItems.length; i++) {
-        var item = allItems[i];
-        var identifier = getItemIdentifier(item);
-
-        if (identifier && allUnlockedItems[identifier]) {
-            newInvented.push(item);
-        } else {
-            newUninvented.push(item);
-        }
-    }
-
-    park.research.inventedItems = newInvented;
-    park.research.uninventedItems = newUninvented;
-    park.research.inventedItems = newInvented;
-}
-
-function markEraAsResearched(eraIndex) {
-    var data = getStorage();
-
-    if (data.disabled) {
-        return;
-    }
-
-    if (!data.unlockedEras) {
-        data.unlockedEras = [0];
-    }
-
-    if (data.unlockedEras.indexOf(eraIndex) === -1) {
-        data.unlockedEras.push(eraIndex);
-        saveStorage(data);
-    }
-
-    markUnlockedErasAsResearched(data);
-}
-
-function resetResearchSystem() {
-    var data = getStorage();
-
-    if (data.disabled) {
-        return;
-    }
-
-    markUnlockedErasAsResearched(data);
-}
-
-function getItemIdentifier(item) {
-    try {
-        var objectType = item.type === 'ride' ? 'ride' : 'scenery_group';
-        var obj = objectManager.getObject(objectType, item.object);
-        return obj ? obj.identifier : null;
-    } catch (e) {
-        return null;
-    }
-}
+// Old markUnlockedErasAsResearched, markEraAsResearched, resetResearchSystem,
+// and getItemIdentifier are replaced by rebuildResearchTable() above.
 
 function getRideIdentifier(ride) {
     try {
@@ -841,34 +1100,24 @@ function progressToNextEra(skipCashDeduction) {
         }
     }
 
-    // All requirements met! Advance to next era
+    // -- Advance era --
     data.currentEra++;
-
-    if (!data.unlockedEras) {
-        data.unlockedEras = [0];
-    }
+    if (!data.unlockedEras) { data.unlockedEras = [0]; }
     if (data.unlockedEras.indexOf(data.currentEra) === -1) {
         data.unlockedEras.push(data.currentEra);
     }
-
-    // Set new era start date
-    data.eraStartDate = {
-        year: date.year,
-        month: date.month,
-        day: date.day
-    };
-
-    // Clear the ready flag
+    data.eraStartDate = { year: date.year, month: date.month, day: date.day };
     data.readyToProgress = false;
-
     saveStorage(data);
 
-    markEraAsResearched(data.currentEra);
+    // -- Load new era objects (Layer 1) then rebuild research table (Layer 2) --
+    var result = loadEraIntoScenario(data.currentEra);
+    rebuildResearchTable(data);
 
     var nextEra = ERAS[data.currentEra];
     park.postMessage({
         type: 'award',
-        text: "Era Unlocked!\n" + nextEra.name
+        text: "Era Unlocked!\n" + nextEra.name + "\n" + result.loaded + " new objects!"
     });
 
     console.log("Advanced to era: " + nextEra.name);
@@ -909,7 +1158,7 @@ function openControlWindow() {
             y: y,
             width: 380,
             height: 30,
-            text: "{YELLOW}Note: Research funding will be disabled\nto maintain era progression."
+            text: "{YELLOW}Note: Research funding is managed normally\nto maintain era progression."
         });
         y += 35;
 
@@ -1137,7 +1386,7 @@ function openControlWindow() {
             y: y,
             width: 380,
             height: 14,
-            text: "{YELLOW}Research funding: Disabled (Era System Active)"
+            text: "{YELLOW}Research funding: Controlled by player"
         });
         y += 22;
 
@@ -1183,7 +1432,7 @@ function openControlWindow() {
 
     ui.openWindow({
         classification: "era-progression-control",
-        title: "Era Progression System v0.4.2",
+        title: "Era Progression System v0.5.0",
         width: 400,
         height: y + 40,
         widgets: widgets
@@ -1199,7 +1448,7 @@ function openDebugWindow() {
 
     debugWindow = ui.openWindow({
         classification: "era-debug",
-        title: "Era Progress Debug v0.4.2",
+        title: "Era Progress Debug v0.5.0",
         width: 520,
         height: 620,
         widgets: createDebugWidgets(data),
@@ -1247,7 +1496,7 @@ function createDebugWidgets(data) {
         y: y,
         width: 500,
         height: 14,
-        text: "{WHITE}━━━━━━━ CURRENT PARK STATUS ━━━━━━━"
+        text: "{WHITE}------- CURRENT PARK STATUS -------"
     });
     y += 16;
 
@@ -1285,7 +1534,7 @@ function createDebugWidgets(data) {
         y: y,
         width: 500,
         height: 14,
-        text: "{WHITE}━━━━━━━━━━━ CURRENT ERA ━━━━━━━━━━━"
+        text: "{WHITE}----------- CURRENT ERA -----------"
     });
     y += 16;
 
@@ -1435,7 +1684,7 @@ function createDebugWidgets(data) {
         y: y,
         width: 500,
         height: 14,
-        text: "{WHITE}━━━━━━━━━━━━ ALL ERAS ━━━━━━━━━━━━"
+        text: "{WHITE}------------ ALL ERAS ------------"
     });
     y += 18;
 
@@ -1530,10 +1779,11 @@ function createDebugWidgets(data) {
         y: y,
         width: 120,
         height: 28,
-        text: "Reset Research",
+        text: "Rebuild Research",
         onClick: function () {
-            resetResearchSystem();
-            ui.showError("Research Reset", "Research table synced to unlocked eras");
+            var data = getStorage();
+            rebuildResearchTable(data);
+            ui.showError("Research Rebuilt", "Research table synced to unlocked eras");
         }
     });
 
@@ -1563,7 +1813,7 @@ function createDebugWidgets(data) {
         y: y,
         width: 120,
         height: 28,
-        text: "◀ Previous Era",
+        text: "< Previous Era",
         onClick: function () {
             var data = getStorage();
             if (data.disabled) {
@@ -1572,6 +1822,7 @@ function createDebugWidgets(data) {
             }
 
             if (data.currentEra > 0) {
+                var removedEra = data.currentEra;
                 data.currentEra--;
 
                 if (!data.unlockedEras) {
@@ -1593,7 +1844,15 @@ function createDebugWidgets(data) {
                 };
 
                 saveStorage(data);
-                markUnlockedErasAsResearched(data);
+
+                // Unload objects from eras no longer unlocked (Layer 1)
+                for (var i = removedEra; i < ERAS.length; i++) {
+                    if (data.unlockedEras.indexOf(i) === -1) {
+                        unloadEraFromScenario(i, data);
+                    }
+                }
+                // Rebuild research table (Layer 2)
+                rebuildResearchTable(data);
                 refreshDebugWindow();
                 ui.showError("Era Changed", "Moved to " + ERAS[data.currentEra].name);
 
@@ -1614,7 +1873,7 @@ function createDebugWidgets(data) {
         y: y,
         width: 120,
         height: 28,
-        text: "Next Era ▶",
+        text: "Next Era >",
         onClick: function () {
             var data = getStorage();
             if (data.disabled) {
@@ -1644,7 +1903,10 @@ function createDebugWidgets(data) {
                 data.readyToProgress = false;
 
                 saveStorage(data);
-                markUnlockedErasAsResearched(data);
+
+                // Load new era objects (Layer 1) then rebuild research (Layer 2)
+                loadEraIntoScenario(data.currentEra);
+                rebuildResearchTable(data);
                 refreshDebugWindow();
                 ui.showError("Era Changed", "Moved to " + ERAS[data.currentEra].name);
 
@@ -1765,22 +2027,24 @@ function createDebugWidgets(data) {
                 park.research.funding = data.backupResearch.funding;
                 park.research.progress = 0;
 
-                var currentLoadedRides = objectManager.getAllObjects("ride");
                 var originalObjects = {};
                 for (var i = 0; i < data.backupResearch.loadedObjects.length; i++) {
                     originalObjects[data.backupResearch.loadedObjects[i]] = true;
                 }
 
                 var unloadedCount = 0;
-                for (var i = 0; i < currentLoadedRides.length; i++) {
-                    var rideId = currentLoadedRides[i].identifier;
-                    if (!originalObjects[rideId] && rideId.indexOf("rct2.ride.") === 0) {
-                        try {
-                            objectManager.unload(rideId);
-                            unloadedCount++;
-                            console.log("Unloaded: " + rideId);
-                        } catch (e) {
-                            console.log("Failed to unload " + rideId + ": " + e);
+                var resetTypes = ["ride", "scenery_group"];
+                for (var t = 0; t < resetTypes.length; t++) {
+                    var allLoaded = objectManager.getAllObjects(resetTypes[t]);
+                    for (var i = 0; i < allLoaded.length; i++) {
+                        var objId = allLoaded[i].identifier;
+                        if (!originalObjects[objId]) {
+                            try {
+                                objectManager.unload(objId);
+                                unloadedCount++;
+                            } catch (e) {
+                                console.log("Failed to unload " + objId + ": " + e);
+                            }
                         }
                     }
                 }
@@ -1855,13 +2119,7 @@ function refreshDebugWindow() {
 
 // ========== MAIN ==========
 
-function disableResearchFunding() {
-    var data = getStorage();
-
-    if (!data.initialized || data.disabled) return;
-
-    park.research.funding = 0;
-}
+// Research funding is now controlled by the player
 
 function dailyCheck() {
     var data = getStorage();
@@ -1869,14 +2127,14 @@ function dailyCheck() {
     if (data.disabled || !data.initialized) return;
 
     checkEraProgression();
-    disableResearchFunding();
 
-    // Re-sync research items daily to prevent OpenRCT2 from changing them
-    markUnlockedErasAsResearched(data);
+
+    // Re-sync research table (Layer 2) to prevent OpenRCT2 from drifting state
+    rebuildResearchTable(data);
 }
 
 function main() {
-    console.log("Era-Based Progression System v0.4.2 loaded!");
+    console.log("Era-Based Progression System v0.5.0 loaded!");
 
     if (typeof park === 'undefined') {
         return;
@@ -1895,7 +2153,7 @@ function main() {
 
 registerPlugin({
     name: "Era-Based Progression System",
-    version: "0.4.2",
+    version: "0.5.0",
     authors: ["Floatey"],
     type: "remote",
     licence: "MIT",
