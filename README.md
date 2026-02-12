@@ -3,7 +3,7 @@
 
 OpenRCT2 plugin — progress era by era, unlock more rides by building rides.
 
-**v0.5.1** • API 77+ • MIT
+**v0.5.3** • API 77+ • MIT
 
 ## Quick Start
 

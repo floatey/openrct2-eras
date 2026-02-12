@@ -2195,7 +2195,7 @@ function main() {
 
 registerPlugin({
     name: "Era-Based Progression System",
-    version: "0.5.1",
+    version: "0.5.3",
     authors: ["Floatey"],
     type: "remote",
     licence: "MIT",
