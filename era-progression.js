@@ -3,7 +3,7 @@
 /**
  * OpenRCT2 Era-Based Progression System
  * 
- * Version: 0.5.0
+ * Version: 0.5.1
  * Author: Floatey
  * License: MIT
  *
@@ -37,7 +37,7 @@
 var ERA_ESSENTIALS = [
     {
         // Era 0: Antique Amusement - Extra essentials for starting
-        rides: ["rct2.ride.mgr1", "rct1.ride.horses", "rct2.ride.lift1"],
+        rides: ["rct2.ride.mgr1", "rct2.ride.sfric1", "rct2.ride.lift1"],
         stalls: ["rct2.ride.tlt1", "rct1.ride.toilets", "rct2.ride.hotds", "rct2.ride.drnks"],
         scenery: ["rct2.scenery_group.scggardn", "rct2.scenery_group.scgtrees", "rct2.scenery_group.scgfence", "rct2.scenery_group.scgpathx"]
     },
@@ -475,6 +475,14 @@ function formatCash(amount) {
     return "$" + amount.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
+/**
+ * Check if an object identifier is from an allowed source.
+ * Only objects from rct2. and openrct2. are allowed.
+ */
+function isAllowedObject(identifier) {
+    return identifier.indexOf('rct2.') === 0 || identifier.indexOf('openrct2.') === 0;
+}
+
 // ========== LAYER 1: OBJECT SELECTION MANAGEMENT ==========
 // These functions manage which objects are loaded into scenario slots.
 // Objects must be loaded (Layer 1) before they can appear in research (Layer 2).
@@ -560,6 +568,7 @@ function loadEraIntoScenario(eraIndex) {
     var loaded = 0, skipped = 0, failed = 0;
 
     for (var i = 0; i < era.items.length; i++) {
+        if (!isAllowedObject(era.items[i])) { skipped++; continue; }
         if (isObjectInScenario(era.items[i])) { skipped++; continue; }
         if (loadObjectIntoScenario(era.items[i])) { loaded++; } else { failed++; }
     }
@@ -583,7 +592,9 @@ function unloadEraFromScenario(eraIndex, data) {
         if (data.unlockedEras[i] === eraIndex) continue;
         var otherEra = ERAS[data.unlockedEras[i]];
         for (var j = 0; j < otherEra.items.length; j++) {
-            stillNeeded[otherEra.items[j]] = true;
+            if (isAllowedObject(otherEra.items[j])) {
+                stillNeeded[otherEra.items[j]] = true;
+            }
         }
     }
 
@@ -598,6 +609,7 @@ function unloadEraFromScenario(eraIndex, data) {
     var unloaded = 0;
     for (var i = 0; i < era.items.length; i++) {
         var id = era.items[i];
+        if (!isAllowedObject(id)) continue;
         if (stillNeeded[id] || originalObjects[id]) continue;
         if (unloadObjectFromScenario(id)) unloaded++;
     }
@@ -612,7 +624,11 @@ function unloadNonEraObjects(data) {
     var keepIds = {};
     for (var i = 0; i < data.unlockedEras.length; i++) {
         var era = ERAS[data.unlockedEras[i]];
-        for (var j = 0; j < era.items.length; j++) keepIds[era.items[j]] = true;
+        for (var j = 0; j < era.items.length; j++) {
+            if (isAllowedObject(era.items[j])) {
+                keepIds[era.items[j]] = true;
+            }
+        }
     }
 
     var types = ["ride", "scenery_group"];
@@ -686,17 +702,23 @@ function rebuildResearchTable(data) {
         var essentials = ERA_ESSENTIALS[data.currentEra];
         if (essentials.rides) {
             for (var i = 0; i < essentials.rides.length; i++) {
-                essentialIds[essentials.rides[i]] = true;
+                if (isAllowedObject(essentials.rides[i])) {
+                    essentialIds[essentials.rides[i]] = true;
+                }
             }
         }
         if (essentials.stalls) {
             for (var i = 0; i < essentials.stalls.length; i++) {
-                essentialIds[essentials.stalls[i]] = true;
+                if (isAllowedObject(essentials.stalls[i])) {
+                    essentialIds[essentials.stalls[i]] = true;
+                }
             }
         }
         if (essentials.scenery) {
             for (var i = 0; i < essentials.scenery.length; i++) {
-                essentialIds[essentials.scenery[i]] = true;
+                if (isAllowedObject(essentials.scenery[i])) {
+                    essentialIds[essentials.scenery[i]] = true;
+                }
             }
         }
     }
@@ -707,7 +729,9 @@ function rebuildResearchTable(data) {
         if (i >= 0 && i < ERAS.length) {
             var era = ERAS[i];
             for (var j = 0; j < era.items.length; j++) {
-                previousEraIds[era.items[j]] = true;
+                if (isAllowedObject(era.items[j])) {
+                    previousEraIds[era.items[j]] = true;
+                }
             }
         }
     }
@@ -717,7 +741,9 @@ function rebuildResearchTable(data) {
     if (data.currentEra >= 0 && data.currentEra < ERAS.length) {
         var currentEra = ERAS[data.currentEra];
         for (var i = 0; i < currentEra.items.length; i++) {
-            currentEraIds[currentEra.items[i]] = true;
+            if (isAllowedObject(currentEra.items[i])) {
+                currentEraIds[currentEra.items[i]] = true;
+            }
         }
     }
 
@@ -883,8 +909,6 @@ function initializeEraSystem() {
 
     // -- Step 5: Set default research funding --
     park.research.funding = 2;  // Default: Maximum funding
-    // -- Step 5: Set default research funding --
-    park.research.funding = 2;  // Default: Maximum funding
 
     data.initialized = true;
     saveStorage(data);
@@ -920,6 +944,7 @@ function countEraRidesBuilt(eraIndex) {
     var eraRides = {};
     for (var i = 0; i < era.items.length; i++) {
         var id = era.items[i];
+        if (!isAllowedObject(id)) continue;
         if (id.indexOf('.ride.') !== -1 &&
             id.indexOf('.scenery_group.') === -1) {
             eraRides[id] = true;
@@ -996,6 +1021,7 @@ function getEraStats(eraIndex) {
 
     for (var i = 0; i < era.items.length; i++) {
         var id = era.items[i];
+        if (!isAllowedObject(id)) continue;
         if (id.indexOf('.scenery_group.') !== -1) {
             sceneryCount++;
         } else if (id.indexOf('.ride.') !== -1) {
@@ -1940,6 +1966,26 @@ function createDebugWidgets(data) {
             if (data.backupResearch) {
                 console.log("Restoring backed up research state...");
 
+                // Step 1: Reload all original objects that were unloaded during init
+                var reloadedCount = 0;
+                if (data.backupResearch.loadedObjects) {
+                    for (var i = 0; i < data.backupResearch.loadedObjects.length; i++) {
+                        var objId = data.backupResearch.loadedObjects[i];
+                        if (!isObjectInScenario(objId)) {
+                            try {
+                                var result = objectManager.load(objId);
+                                if (result !== null) {
+                                    reloadedCount++;
+                                    console.log("Reloaded original object: " + objId);
+                                }
+                            } catch (e) {
+                                console.log("Failed to reload original object " + objId + ": " + e);
+                            }
+                        }
+                    }
+                }
+                console.log("Reloaded " + reloadedCount + " original objects");
+
                 var restoredInvented = [];
                 var restoredUninvented = [];
 
@@ -2127,10 +2173,6 @@ function dailyCheck() {
     if (data.disabled || !data.initialized) return;
 
     checkEraProgression();
-
-
-    // Re-sync research table (Layer 2) to prevent OpenRCT2 from drifting state
-    rebuildResearchTable(data);
 }
 
 function main() {
@@ -2153,7 +2195,7 @@ function main() {
 
 registerPlugin({
     name: "Era-Based Progression System",
-    version: "0.5.0",
+    version: "0.5.1",
     authors: ["Floatey"],
     type: "remote",
     licence: "MIT",

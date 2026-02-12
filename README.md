@@ -3,7 +3,7 @@
 
 OpenRCT2 plugin — progress era by era, unlock more rides by building rides.
 
-**v0.4.2** • API 77+ • MIT
+**v0.5.1** • API 77+ • MIT
 
 ## Quick Start
 
@@ -29,14 +29,14 @@ To progress to the next era, you must meet a set of requirements that include:
 - Play in current era for X years
 - Pay $$$ to progress
 
-Eras get progressively harder to complete as they go on.
+Each era has higher requirements than the last.
 
-Research is **disabled**. Only era-appropriate content is available. 
+Vanilla research is enabled, however only era-appropriate content is available. 
 
 Plugin can be disabled via debug menu.
 
 All rides required for this plugin are enabled in the scenario upon initialization.
-*(excluding rct2ww, rct2tt, rct1ll, rct1)
+*(excluding rct1 / dlc content)
 
 ## Links
 
