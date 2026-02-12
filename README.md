@@ -1,5 +1,7 @@
 # Era Progression System
-!! THIS PLUGIN IS IN DEVELOPMENT, PLEASE BACKUP YOUR SAVES BEFORE YOU TRY IT OUT !!
+**THIS PLUGIN IS IN DEVELOPMENT, PLEASE BACKUP YOUR SAVES BEFORE YOU TRY IT OUT**
+
+![Thumbnail](thumb.png)
 
 OpenRCT2 plugin — progress era by era, unlock more rides by building rides.
 
