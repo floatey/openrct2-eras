@@ -1404,16 +1404,6 @@ function openControlWindow() {
             height: 14,
             text: "{SILVER}Unlocked eras: " + data.unlockedEras.length + " / " + ERAS.length
         });
-        y += 16;
-
-        widgets.push({
-            type: "label",
-            x: 10,
-            y: y,
-            width: 380,
-            height: 14,
-            text: "{YELLOW}Research funding: Controlled by player"
-        });
         y += 22;
 
         widgets.push({
