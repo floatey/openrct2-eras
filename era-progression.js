@@ -39,7 +39,9 @@ var ERA_ESSENTIALS = [
         // Era 0: Antique Amusement - Extra essentials for starting
         rides: ["rct2.ride.mgr1", "rct2.ride.sfric1", "rct2.ride.lift1"],
         stalls: ["rct2.ride.tlt1", "rct1.ride.toilets", "rct2.ride.hotds", "rct2.ride.drnks"],
-        scenery: ["rct2.scenery_group.scggardn", "rct2.scenery_group.scgtrees", "rct2.scenery_group.scgfence", "rct2.scenery_group.scgpathx"]
+        scenery: ["rct2.scenery_group.scggardn", "rct2.scenery_group.scgshrub", "rct2.scenery_group.scgtrees",
+            "rct2.scenery_group.scgfence", "rct2.scenery_group.scgwalls", "rct2.scenery_group.scgpathx",
+            "rct2.scenery_group.scgwater"]
     },
     {
         // Era 1: Classic Coasters
